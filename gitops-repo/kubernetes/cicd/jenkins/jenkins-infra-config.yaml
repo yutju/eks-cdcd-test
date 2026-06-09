@@ -8,8 +8,8 @@ data:
   GITLAB_URL: "http://gitlab-service.jenkins.svc.cluster.local"
   GITLAB_USER: "root"
   # Jenkins 정보 
-  JENKINS_IP: "192.168.72.132" # (참고: 향후 EKS Ingress/ALB 도메인으로 변경 필요)
-  JENKINS_PORT: "32000"
+  JENKINS_IP: "jenkins.jenkins.svc.cluster.local" 
+  JENKINS_PORT: "8080"
   # 배포 타겟 정보
   TARGET_NS: "dev-apps"
   MONITOR_NS: "monitoring"
