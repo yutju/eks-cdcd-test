@@ -4,11 +4,11 @@ metadata:
   name: jenkins-infra-config
   namespace: jenkins
 data:
-  # GitLab 정보
-  GITLAB_URL: "http://192.168.72.131"
+  # 🌟 GitLab 정보 (IP 하드코딩 제거 -> EKS 내부 DNS 주소 사용)
+  GITLAB_URL: "http://gitlab-service.jenkins.svc.cluster.local"
   GITLAB_USER: "root"
   # Jenkins 정보 
-  JENKINS_IP: "192.168.72.132"
+  JENKINS_IP: "192.168.72.132" # (참고: 향후 EKS Ingress/ALB 도메인으로 변경 필요)
   JENKINS_PORT: "32000"
   # 배포 타겟 정보
   TARGET_NS: "dev-apps"

@@ -93,22 +93,16 @@ spec:
             steps {
                 container('kaniko') {
                     script {
-                        withCredentials([usernamePassword(credentialsId: 'aws-ecr-cred', passwordVariable: 'AWS_SECRET', usernameVariable: 'AWS_ACCESS')]) {
-                            // AWS 인증 정보를 환경 변수로 설정하고, Kaniko가 ECR 자격 증명 헬퍼를 사용하도록 config.json 구성 후 이미지 빌드/푸시 실행
-                            sh """
-                                export AWS_ACCESS_KEY_ID=\${AWS_ACCESS}
-                                export AWS_SECRET_ACCESS_KEY=\${AWS_SECRET}
-                                export AWS_REGION=${AWS_REGION}
+                        // AWS 자격 증명 (withCredentials) 제거: EKS의 IAM Role(IRSA)을 통해 자동 인증 수행
+                        sh """
+                            mkdir -p /kaniko/.docker
+                            echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
 
-                                mkdir -p /kaniko/.docker
-                                echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
-
-                                /kaniko/executor \
-                                    --context `pwd` \
-                                    --dockerfile `pwd`/Dockerfile \
-                                    --destination ${ECR_IMAGE_URI}
-                            """
-                        }
+                            /kaniko/executor \
+                                --context `pwd` \
+                                --dockerfile `pwd`/Dockerfile \
+                                --destination ${ECR_IMAGE_URI}
+                        """
                     }
                 }
             }
@@ -118,13 +112,8 @@ spec:
             steps {
                 container('kubectl') {
                     script {
-                        // 💡 수정된 부분: AWS 인증 정보를 불러와서 환경 변수에 등록한 뒤 토큰 발급
-                        withCredentials([usernamePassword(credentialsId: 'aws-ecr-cred', passwordVariable: 'AWS_SECRET', usernameVariable: 'AWS_ACCESS')]) {
-                            sh """
-                            export AWS_ACCESS_KEY_ID=\${AWS_ACCESS}
-                            export AWS_SECRET_ACCESS_KEY=\${AWS_SECRET}
-                            export AWS_REGION=${AWS_REGION}
-
+                        // AWS 자격 증명 제거: AWS CLI가 Pod에 부여된 IAM Role을 사용하여 자동 토큰 발급
+                        sh """
                             NEW_PASSWORD=\$(aws ecr get-login-password --region ${AWS_REGION})
 
                             kubectl delete secret ecr-secret -n dev-apps --ignore-not-found
@@ -134,8 +123,7 @@ spec:
                               --docker-password=\$NEW_PASSWORD \
                               -n dev-apps
                             echo "ECR Secret이 최신 토큰으로 갱신되었습니다."
-                            """
-                        }
+                        """
                     }
                 }
             }
@@ -146,14 +134,15 @@ spec:
                 container('kubectl') {
                     script {
                         withCredentials([usernamePassword(credentialsId: 'gitlab-checkout-cred', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
-                            // GitOps 레포지토리를 클론한 뒤, 새롭게 빌드된 이미지의 태그(URI)로 매니페스트 파일을 수정하고 변경 사항을 반영(Push)
+                            //  192.168.x.x 하드코딩 제거: K8s 내부 서비스명(Endpoints)으로 GitLab 접근
                             sh """
                                 git config --global user.email "jenkins@jenkins.com"
                                 git config --global user.name "Jenkins-CI"
                                 git config --global http.sslVerify false
 
                                 rm -rf gitops-repo-tmp
-                                git clone -b main http://\${GIT_USERNAME}:\${GIT_PASSWORD}@192.168.72.131/root/gitops-repo.git gitops-repo-tmp
+                                # K8s 내부 DNS (gitlab-service) 적용 완료
+                                git clone -b main http://\${GIT_USERNAME}:\${GIT_PASSWORD}@gitlab-service.jenkins.svc.cluster.local/root/gitops-repo.git gitops-repo-tmp
 
                                 sed -i "s|image: .*|image: ${ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/app/test-deployment.yaml
 
