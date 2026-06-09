@@ -1,0 +1,171 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: jenkins-agent
+  # AWS Fargate Profile 라우팅을 위한 네임스페이스 지정 (하이브리드 구성 시 필요)
+  # namespace: jenkins-build
+spec:
+  serviceAccountName: jenkins-stack
+  containers:
+  # 파이프라인 제어 및 AWS CLI/K8s 명령어를 실행하기 위한 유틸리티 컨테이너
+  - name: kubectl
+    image: alpine:latest
+    command: ["sleep"]
+    args: ["infinity"]
+    securityContext:
+      runAsUser: 0
+    envFrom:
+    - configMapRef:
+        name: jenkins-infra-config
+
+  # 특권(Privileged) 권한 및 도커 데몬 없이 컨테이너 이미지를 빌드/푸시하기 위한 Kaniko 컨테이너
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
+    command: ["sleep"]
+    args: ["infinity"]
+"""
+        }
+    }
+
+    environment {
+        // GitLab 연동 및 웹훅 구성을 위한 환경 변수
+        GITLAB_API_TOKEN = credentials('gitlab-token-id')
+        GITLAB_URL       = "${env.GITLAB_URL}"
+        GITLAB_PROJECT_ID = "root%2Fapp-repo"
+        JENKINS_WEBHOOK_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/project/jenkins-test-pipeline"
+
+        // AWS ECR 대상 레지스트리 및 빌드될 이미지 태그 설정
+        AWS_ACCOUNT_ID = "407002402096"
+        AWS_REGION     = "ap-northeast-2"
+        ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        ECR_REPO_NAME  = "dev-apps/hello-k3s"
+        IMAGE_TAG      = "${BUILD_NUMBER}"
+        ECR_IMAGE_URI  = "${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG}"
+    }
+
+    triggers {
+        // GitLab에서 Push 또는 Merge Request 발생 시 자동으로 파이프라인을 트리거
+        gitlab(triggerOnPush: true, triggerOnMergeRequest: true, branchFilterType: 'All', secretToken: 'jenkins-test-secret')
+    }
+
+    stages {
+        stage('0. 기본 에이전트 도구 주입') {
+            steps {
+                container('kubectl') {
+                    // 파이프라인 실행에 필요한 패키지(AWS CLI, Git 등) 및 kubectl 수동 설치
+                    sh """
+                    apk add --no-cache curl openssl bash git aws-cli > /dev/null
+                    curl -sLO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
+                    chmod +x kubectl
+                    mv kubectl /usr/local/bin/
+                    """
+                }
+            }
+        }
+
+        stage('1. 코드 체크아웃') {
+            steps { checkout scm }
+        }
+
+        stage('2. GitLab 웹훅 자동 등록') {
+            steps {
+                container('kubectl') {
+                    script {
+                        // GitLab API를 호출하여 현재 파이프라인의 웹훅이 등록되어 있는지 확인 후, 없으면 자동 등록
+                        def gitlabApiBase = "${env.GITLAB_URL}/api/v4"
+                        sh """
+                        EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_URL}" || true)
+                        if [ -z "\$EXISTING_HOOK" ]; then
+                            curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks?url=${env.JENKINS_WEBHOOK_URL}&push_events=true&token=jenkins-test-secret&enable_ssl_verification=false"
+                        fi
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('3. Docker Image Build & ECR Push (Kaniko)') {
+            steps {
+                container('kaniko') {
+                    script {
+                        withCredentials([usernamePassword(credentialsId: 'aws-ecr-cred', passwordVariable: 'AWS_SECRET', usernameVariable: 'AWS_ACCESS')]) {
+                            // AWS 인증 정보를 환경 변수로 설정하고, Kaniko가 ECR 자격 증명 헬퍼를 사용하도록 config.json 구성 후 이미지 빌드/푸시 실행
+                            sh """
+                                export AWS_ACCESS_KEY_ID=\${AWS_ACCESS}
+                                export AWS_SECRET_ACCESS_KEY=\${AWS_SECRET}
+                                export AWS_REGION=${AWS_REGION}
+
+                                mkdir -p /kaniko/.docker
+                                echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
+
+                                /kaniko/executor \
+                                    --context `pwd` \
+                                    --dockerfile `pwd`/Dockerfile \
+                                    --destination ${ECR_IMAGE_URI}
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('4. ECR Secret 자동 갱신 (12시간 제한 해제)') {
+            steps {
+                container('kubectl') {
+                    script {
+                        // 💡 수정된 부분: AWS 인증 정보를 불러와서 환경 변수에 등록한 뒤 토큰 발급
+                        withCredentials([usernamePassword(credentialsId: 'aws-ecr-cred', passwordVariable: 'AWS_SECRET', usernameVariable: 'AWS_ACCESS')]) {
+                            sh """
+                            export AWS_ACCESS_KEY_ID=\${AWS_ACCESS}
+                            export AWS_SECRET_ACCESS_KEY=\${AWS_SECRET}
+                            export AWS_REGION=${AWS_REGION}
+
+                            NEW_PASSWORD=\$(aws ecr get-login-password --region ${AWS_REGION})
+
+                            kubectl delete secret ecr-secret -n dev-apps --ignore-not-found
+                            kubectl create secret docker-registry ecr-secret \
+                              --docker-server=${ECR_REGISTRY} \
+                              --docker-username=AWS \
+                              --docker-password=\$NEW_PASSWORD \
+                              -n dev-apps
+                            echo "ECR Secret이 최신 토큰으로 갱신되었습니다."
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('5. GitOps 레포 자동 수정 및 푸시') {
+            steps {
+                container('kubectl') {
+                    script {
+                        withCredentials([usernamePassword(credentialsId: 'gitlab-checkout-cred', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                            // GitOps 레포지토리를 클론한 뒤, 새롭게 빌드된 이미지의 태그(URI)로 매니페스트 파일을 수정하고 변경 사항을 반영(Push)
+                            sh """
+                                git config --global user.email "jenkins@jenkins.com"
+                                git config --global user.name "Jenkins-CI"
+                                git config --global http.sslVerify false
+
+                                rm -rf gitops-repo-tmp
+                                git clone -b main http://\${GIT_USERNAME}:\${GIT_PASSWORD}@192.168.72.131/root/gitops-repo.git gitops-repo-tmp
+
+                                sed -i "s|image: .*|image: ${ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/app/test-deployment.yaml
+
+                                cd gitops-repo-tmp
+                                git add kubernetes/apps/app/test-deployment.yaml
+                                git commit -m "image: ECR 이미지 업데이트 (Build #${IMAGE_TAG})"
+                                git push origin main
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

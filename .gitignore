@@ -1,0 +1,33 @@
+# 1. 암호화 키 및 인증서 파일 (절대 업로드 금지)
+*.pem
+*.key
+*.ppk
+his-bastion-key.pem
+
+# 2. 쿠버네티스 Secret 파일
+*secret.yaml
+*secret.yml
+*secrets.yaml
+
+# 3. 환경 변수 및 자격 증명 (AWS 등)
+.env
+credentials
+config
+kubeconfig
+
+# 4. 대용량 압축 파일 및 설치 파일
+*.zip
+*.tar.gz
+awscliv2.zip
+aws/
+
+# 5. 테라폼(Terraform) 관련 상태 파일 (참고용)
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# 6. IDE 및 OS 자동 생성 파일
+.vscode/
+.idea/
+.DS_Store
