@@ -1,0 +1,19 @@
+jenkins:
+  systemMessage: "Jenkins configured via Code (JCasC)"
+  globalNodeProperties:
+    - envVars:
+        defaults:
+          - key: GLOBAL_GITLAB_URL
+            value: "${GITLAB_URL}" # ConfigMap에서 주입된 값 사용
+          - key: TARGET_NS
+            value: "${TARGET_NS}"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "gitlab-webhook-token"
+              secret: "${GITLAB_TOKEN}" # Secret에서 주입된 값 사용
+              description: "GitLab Webhook Secret Token"

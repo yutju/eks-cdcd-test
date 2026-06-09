@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: edge-clusters-appset
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          # [변수 통제소] 클러스터가 추가되면 여기에 두 줄만 추가하면 됩니다.
+          - clusterName: edge-1
+            edgeApiUrl: 'https://<엣지-1-EKS-API-주소-입력>'
+          - clusterName: edge-2
+            edgeApiUrl: 'https://<엣지-2-EKS-API-주소-입력>'
+
+  template:
+    metadata:
+      name: '{{clusterName}}-bootstrap'
+    spec:
+      project: default
+      source:
+        # 공통 IP(GitLab) 하드코딩은 이제 오직 여기서만 관리합니다.
+        repoURL: 'http://192.168.72.131/root/gitops-repo.git'
+        targetRevision: main
+        path: 'clusters/{{clusterName}}/apps'
+        helm:
+          # 하위 앱(Falco, NodeExporter)들에게 전역 변수를 한 번에 쏴줍니다.
+          parameters:
+            - name: global.gitlabUrl
+              value: 'http://192.168.72.131'
+            - name: global.edgeApiUrl
+              value: '{{edgeApiUrl}}' # 위 list에서 정의한 변수가 쏙 들어갑니다.
+            - name: global.hubPrometheusUrl
+              value: 'http://<허브-프로메테우스-주소>:9090/api/v1/write'
+      destination:
+        server: 'https://kubernetes.default.svc' # 중앙 컨트롤러(Hub)에 템플릿 배포
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

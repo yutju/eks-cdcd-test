@@ -1,0 +1,31 @@
+# kubernetes/infrastructure/falco-stack.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://falcosecurity.github.io/charts'
+    chart: falco
+    targetRevision: 4.10.0 #  버전
+    helm:
+      values: |
+        falco:
+          jsonOutput: true
+        
+        
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: security # 보안 관련  네임스페이스
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5 # 최대 5회까지 재시도
+      backoff:
+        duration: 5s # 1차 실패 시 5초 대기
+        factor: 2    # 실패할 때마다 대기 시간을 2배씩 늘림 (5초 -> 10초 -> 20초)
+        maxDuration: 3m # 아무리 길어져도 최대 3분 간격으로 계속 찌름

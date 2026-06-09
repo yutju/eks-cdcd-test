@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edge-1-monitoring-agent
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://prometheus-community.github.io/helm-charts'
+    chart: kube-prometheus-stack
+    targetRevision: 56.6.2
+    helm:
+      values: |
+        grafana:
+          enabled: false
+        alertmanager:
+          enabled: false
+        prometheus-node-exporter:
+          enabled: true
+          nodeSelector:
+            eks.amazonaws.com/compute-type: ec2
+        kube-state-metrics:
+          enabled: true
+          nodeSelector:
+            eks.amazonaws.com/compute-type: ec2
+        prometheusOperator:
+          nodeSelector:
+            eks.amazonaws.com/compute-type: ec2
+        # 🌟 프로메테우스를 가벼운 수집기(Agent)로 변경하여 리소스 낭비 방지
+        prometheus:
+          enabled: true
+          agentMode: true
+          prometheusSpec:
+            nodeSelector:
+              eks.amazonaws.com/compute-type: ec2
+            remoteWrite:
+              - url: "{{ .Values.global.hubPrometheusUrl }}"
+  destination:
+    server: '{{ .Values.global.edgeApiUrl }}'
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true

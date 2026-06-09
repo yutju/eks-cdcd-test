@@ -1,0 +1,21 @@
+# 1. jenkins-build 네임스페이스에 새로운 계정(ServiceAccount) 생성
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins-build-agent
+  namespace: jenkins-build
+
+---
+# 2.  권한(Role) 부여
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jenkins-build-agent-admin-binding
+subjects:
+- kind: ServiceAccount
+  name: jenkins-build-agent
+  namespace: jenkins-build
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin  # 파이프라인 내의 kubectl 명령어를 위해 최고 관리자 권한 부여
+  apiGroup: rbac.authorization.k8s.io

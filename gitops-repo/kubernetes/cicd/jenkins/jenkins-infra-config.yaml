@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-infra-config
+  namespace: jenkins
+data:
+  # GitLab 정보
+  GITLAB_URL: "http://192.168.72.131"
+  GITLAB_USER: "root"
+  # Jenkins 정보 
+  JENKINS_IP: "192.168.72.132"
+  JENKINS_PORT: "32000"
+  # 배포 타겟 정보
+  TARGET_NS: "dev-apps"
+  MONITOR_NS: "monitoring"

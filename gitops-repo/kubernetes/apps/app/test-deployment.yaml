@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-k3s            # 배포 이름
+  namespace: dev-apps         # 배포될 공간
+spec:
+  replicas: 3                # 파드(Pod) 개수 3개 유지 (고가용성)
+  selector:
+    matchLabels:
+      app: hello-k3s         # 이 라벨을 가진 파드들을 관리함
+  template:
+    metadata:
+      labels:
+        app: hello-k3s       # 생성될 파드에 붙을 라벨 (서비스와 연결되는 고리)
+    spec:
+      containers:
+      - name: nginx-container
+        image: nginx:stable-alpine # 가벼운 알파인 리눅스 기반 Nginx 이미지
+        ports:
+        - containerPort: 80  # 컨테이너가 내부적으로 사용하는 포트
+      imagePullSecrets:
+      - name: ecr-secret

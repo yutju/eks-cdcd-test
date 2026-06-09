@@ -1,0 +1,155 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins-stack
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://charts.jenkins.io'
+    chart: jenkins
+    targetRevision: 5.8.104
+    helm:
+      values: |
+        controller:
+          #  젠킨스 시스템 시간을 한국 시간(KST) 설정
+          javaOpts: "-Duser.timezone=Asia/Seoul"
+
+          serviceType: NodePort
+          servicePort: 8080
+          nodePort: 32000
+          agentListenerPort: 50000
+
+          installLatestPlugins: true
+          installLatestSpecifiedPlugins: true
+          installPlugins:
+            - kubernetes
+            - workflow-aggregator
+            - git
+            - configuration-as-code
+            - job-dsl
+            - gitlab-plugin
+            - credentials-binding
+            - plain-credentials
+            - aws-credentials
+
+          admin:
+            existingSecret: "jenkins-stack"
+            userKey: "jenkins-admin-user"
+            passwordKey: "jenkins-admin-password"
+
+          containerEnv:
+            - name: GITLAB_TOKEN_ENV
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-api-secret
+                  key: api-token
+            - name: CM_GITLAB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: jenkins-infra-config
+                  key: GITLAB_URL
+            - name: CM_JENKINS_IP
+              valueFrom:
+                configMapKeyRef:
+                  name: jenkins-infra-config
+                  key: JENKINS_IP
+            - name: CM_JENKINS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: jenkins-infra-config
+                  key: JENKINS_PORT
+            # 🌟 추가: AWS ECR 시크릿을 환경 변수로 주입
+            - name: AWS_ECR_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-ecr-secret
+                  key: access-key
+            - name: AWS_ECR_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-ecr-secret
+                  key: secret-key
+
+          JCasC:
+            defaultConfig: true
+            configScripts:
+              all-config: |
+                jenkins:
+                  systemMessage: "Jenkins configured automatically by ArgoCD - Fully GitOps"
+
+                  globalNodeProperties:
+                    - envVars:
+                        env:
+                          - key: "GITLAB_URL"
+                            value: "${CM_GITLAB_URL}"
+                          - key: "JENKINS_IP"
+                            value: "${CM_JENKINS_IP}"
+                          - key: "JENKINS_PORT"
+                            value: "${CM_JENKINS_PORT}"
+
+                credentials:
+                  system:
+                    domainCredentials:
+                      - credentials:
+                          - string:
+                              scope: GLOBAL
+                              id: "gitlab-token-id"
+                              secret: "${GITLAB_TOKEN_ENV}"
+                          - usernamePassword:
+                              scope: GLOBAL
+                              id: "gitlab-checkout-cred"
+                              username: "root"
+                              password: "${GITLAB_TOKEN_ENV}"
+                          # 🌟 추가: 환경 변수를 참조하여 AWS ECR 자격 증명 자동 생성
+                          - usernamePassword:
+                              scope: GLOBAL
+                              id: "aws-ecr-cred"
+                              username: "${AWS_ECR_ACCESS_KEY}"
+                              password: "${AWS_ECR_SECRET_KEY}"
+                              description: "AWS ECR Credentials for Pipeline"
+
+                jobs:
+                  - script: >
+                      pipelineJob('jenkins-test-pipeline') {
+                        definition {
+                          cpsScm {
+                            scm {
+                              git {
+                                remote {
+                                  url("${CM_GITLAB_URL}/root/app-repo.git")
+                                  credentials('gitlab-checkout-cred')
+                                }
+                                branches('*/main')
+                              }
+                            }
+                            scriptPath('Jenkinsfile')
+                          }
+                        }
+                      }
+
+                unclassified:
+                  gitLabConnectionConfig:
+                    connections:
+                      - name: "my-gitlab"
+                        url: "${CM_GITLAB_URL}"
+                        apiTokenId: "gitlab-token-id"
+                        clientBuilderId: "autodetect"
+                        ignoreCertificateErrors: true
+
+        agent:
+          enabled: true
+
+        persistence:
+          enabled: true
+          existingClaim: jenkins-pvc
+          storageClass: "gp3"
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: jenkins
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

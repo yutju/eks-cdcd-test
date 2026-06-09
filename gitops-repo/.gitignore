@@ -1,0 +1,18 @@
+# Kubernetes Secrets
+*secret*.yaml
+*secret*.yml
+*Secret*.yaml
+*Secret*.yml
+
+# 명시적인 Secret 파일명 (컨벤션에 따라 추가)
+secrets.yaml
+credentials.yaml
+
+# TLS Certificates & Keys (인증서 관련)
+*.pem
+*.key
+*.crt
+
+# Environment Variables (환경 변수)
+.env
+.env.*

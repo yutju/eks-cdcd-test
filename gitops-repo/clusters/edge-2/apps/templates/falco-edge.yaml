@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edge-2-falco
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://falcosecurity.github.io/charts'
+    chart: falco
+    targetRevision: 4.10.0
+    helm:
+      values: |
+        falco:
+          jsonOutput: true
+        # 🌟 Fargate 노드 배포 방지 설정
+        nodeSelector:
+          eks.amazonaws.com/compute-type: ec2
+  destination:
+    server: '{{ .Values.global.edgeApiUrl }}'
+    namespace: security
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
