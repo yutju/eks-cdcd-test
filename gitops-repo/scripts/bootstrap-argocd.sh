@@ -59,8 +59,8 @@ if [ -f "$SECRET_YAML" ] && [ -f "$APP_YAML" ]; then
 
     echo "--------------------------------------------------"
     echo "완벽합니다! ArgoCD 부트스트랩 및 GitOps 연동 성공"
-    echo "✔ 다음 명령어로 초기 비밀번호를 확인한 후 로그인하세요:"
-    echo "👉 argocd admin initial-password -n argocd"
+    echo " 다음 명령어로 초기 비밀번호를 확인한 후 로그인하세요:"
+    echo " argocd admin initial-password -n argocd"
     echo "--------------------------------------------------"
 else
     echo "에러: 필수 매니페스트 파일($SECRET_YAML 또는 $APP_YAML)이 존재하지 않습니다."
