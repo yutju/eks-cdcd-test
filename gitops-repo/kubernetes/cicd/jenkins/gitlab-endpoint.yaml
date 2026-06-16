@@ -5,7 +5,7 @@ metadata:
   namespace: jenkins
 spec:
   ports:
-    - port: 80
+    - port: 8080
       targetPort: 8080  # EKS 내부에서는 80으로 호출하면, 외부 8080으로 연결되게 함
 ---
 apiVersion: v1
