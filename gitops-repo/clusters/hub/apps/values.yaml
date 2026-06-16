@@ -1,2 +1,3 @@
 global:
-  gitlabUrl: "http://192.168.72.131"
+  gitlabUrl: "http://gitlab-service.jenkins.svc.cluster.local:8080"
+
