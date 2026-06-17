@@ -12,19 +12,20 @@ spec:
     helm:
       values: |
         controller:
-          # 젠킨스 시스템 시간을 한국 시간(KST) 설정
-          javaOpts: "-Duser.timezone=Asia/Seoul"
+          # 🌟 [수정] 한국 시간 설정 + 플러그인 설치 타임아웃 대폭 연장 (5분)
+          javaOpts: "-Duser.timezone=Asia/Seoul -DpluginManager.connectionTimeout=300000 -DpluginManager.readTimeout=300000"
 
-          # 🌟 수정됨: NodePort 대신 내부 로드밸런서(LoadBalancer) 적용
           serviceType: LoadBalancer
           servicePort: 8080
           agentListenerPort: 50000
           
-          # 🌟 추가됨: AWS에 내부용 NLB를 생성하도록 지시하는 어노테이션
           serviceAnnotations:
             service.beta.kubernetes.io/aws-load-balancer-internal: "true"
             service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+            # 🌟 [추가] 노드 IP가 바뀌어도 NLB가 파드를 직접 찾아가도록 고정 설정
+            service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
 
+          # 🌟 [수정] 자동 설치 시도 (네트워크 환경에 맞춰 최적화)
           installLatestPlugins: true
           installLatestSpecifiedPlugins: true
           installPlugins:
@@ -44,6 +45,11 @@ spec:
             passwordKey: "jenkins-admin-password"
 
           containerEnv:
+            # 🌟 [추가] 업데이트 센터 접속 실패 방지를 위한 안정적인 미러 서버 설정
+            - name: JENKINS_UC
+              value: "https://mirrors.tuna.tsinghua.edu.cn/jenkins/updates/update-center.json"
+            - name: JENKINS_UC_EXPERIMENTAL
+              value: "https://mirrors.tuna.tsinghua.edu.cn/jenkins/updates/experimental/update-center.json"
             - name: GITLAB_TOKEN_ENV
               valueFrom:
                 secretKeyRef:
@@ -64,7 +70,6 @@ spec:
                 configMapKeyRef:
                   name: jenkins-infra-config
                   key: JENKINS_PORT
-            # AWS ECR 시크릿을 환경 변수로 주입
             - name: AWS_ECR_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -82,7 +87,6 @@ spec:
               all-config: |
                 jenkins:
                   systemMessage: "Jenkins configured automatically by ArgoCD - Fully GitOps"
-
                   globalNodeProperties:
                     - envVars:
                         env:
@@ -92,7 +96,6 @@ spec:
                             value: "${CM_JENKINS_IP}"
                           - key: "JENKINS_PORT"
                             value: "${CM_JENKINS_PORT}"
-
                 credentials:
                   system:
                     domainCredentials:
@@ -106,14 +109,12 @@ spec:
                               id: "gitlab-checkout-cred"
                               username: "root"
                               password: "${GITLAB_TOKEN_ENV}"
-                          # 환경 변수를 참조하여 AWS ECR 자격 증명 자동 생성
                           - usernamePassword:
                               scope: GLOBAL
                               id: "aws-ecr-cred"
                               username: "${AWS_ECR_ACCESS_KEY}"
                               password: "${AWS_ECR_SECRET_KEY}"
                               description: "AWS ECR Credentials for Pipeline"
-
                 jobs:
                   - script: >
                       pipelineJob('jenkins-test-pipeline') {
@@ -132,7 +133,6 @@ spec:
                           }
                         }
                       }
-
                 unclassified:
                   gitLabConnectionConfig:
                     connections:
