@@ -9,16 +9,26 @@ spec:
   source:
     repoURL: 'https://falcosecurity.github.io/charts'
     chart: falco
-    targetRevision: 4.10.0 #  버전
+    targetRevision: 4.10.0 # 버전
     helm:
       values: |
         falco:
           jsonOutput: true
-        
-        
+          # 🌟 [수정] 모든 노드(EC2)에서 보안 감시를 수행하되, 
+          # Fargate 노드에서는 동작하지 않도록 Node Affinity 설정
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values:
+                    - fargate
+
   destination:
     server: 'https://kubernetes.default.svc'
-    namespace: security # 보안 관련  네임스페이스
+    namespace: security # 보안 관련 네임스페이스
   syncPolicy:
     automated:
       prune: true

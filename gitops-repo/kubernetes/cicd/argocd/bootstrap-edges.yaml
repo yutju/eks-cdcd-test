@@ -17,15 +17,17 @@ spec:
     spec:
       project: default
       source:
-        repoURL: 'http://gitlab-service.jenkins.svc.cluster.local:8080/root/gitops-repo.git'
+        #  GitLab 외부 인스턴스 IP 주소로 변경
+        repoURL: 'http://10.0.4.10:8080/root/gitops-repo.git'
         targetRevision: main
         path: 'clusters/{{name}}/apps' # 클러스터 이름별 폴더 구조 필요 (edge-1, edge-2 등)
         helm:
           parameters:
+            #  헬름 파라미터도 외부 IP로 일괄 변경
             - name: global.gitlabUrl
-              value: 'http://gitlab-service.jenkins.svc.cluster.local:8080'
+              value: 'http://10.0.4.10:8080'
             - name: global.edgeApiUrl
-              value: '{{server}}' # 등록된 클러스터의 API 서버 주소 자동 삽입
+              value: '{{server}}' 
             - name: global.hubPrometheusUrl
               value: 'http://<허브-프로메테우스-주소>:9090/api/v1/write'
       destination:

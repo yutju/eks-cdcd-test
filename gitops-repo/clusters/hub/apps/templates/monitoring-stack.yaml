@@ -6,29 +6,69 @@ metadata:
 spec:
   project: default
   source:
-    # 프로메테우스 커뮤니티 공식 헬름 레포지토리 주소
     repoURL: 'https://prometheus-community.github.io/helm-charts'
     chart: kube-prometheus-stack
-    targetRevision: 56.6.2  # 최신 안정화 버전 계열
+    targetRevision: 56.6.2
     helm:
-      # 필요한 컴포넌트들을 true로 켜서 헬름이 한방에 빌드하게 만듬
       values: |
         prometheus:
           enabled: true
-          #  엣지 클러스터의 데이터를 받기 위한 수신 모드 및 포트 개방
           prometheusSpec:
             enableRemoteWriteReceiver: true
+            nodeSelector:
+              role: infra
+            tolerations:
+              - key: "dedicated"
+                operator: "Equal"
+                value: "infra"
+                effect: "NoSchedule"
           service:
             type: NodePort
             nodePort: 30090
+        
         grafana:
           enabled: true
+          nodeSelector:
+            role: infra
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "infra"
+              effect: "NoSchedule"
+        
         alertmanager:
           enabled: true
+          nodeSelector:
+            role: infra
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "infra"
+              effect: "NoSchedule"
+        
         kube-state-metrics:
           enabled: true
+          nodeSelector:
+            role: infra
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "infra"
+              effect: "NoSchedule"
+        
+        # 🌟 [수정] Fargate 노드 제외 및 데몬셋 스케줄링 최적화
         prometheus-node-exporter:
           enabled: true
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values:
+                    - fargate
+
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: monitoring
@@ -36,13 +76,11 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    # CRD 용량 초과 에러 방지를 위한 서버 사이드 어플라이
     syncOptions:
     - ServerSideApply=true
-    # 덩치가 큰 모니터링 스택의 안정적인 배포를 위한 자동 재시도
     retry:
-      limit: 5 # 최대 5회까지 재시도
+      limit: 5
       backoff:
-        duration: 5s # 1차 실패 시 5초 대기
-        factor: 2    # 실패할 때마다 대기 시간을 2배씩 늘림 (5초 -> 10초 -> 20초)
-        maxDuration: 3m # 아무리 길어져도 최대 3분 간격으로 계속 찌름
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

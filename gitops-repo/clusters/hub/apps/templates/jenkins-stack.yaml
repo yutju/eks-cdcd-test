@@ -12,6 +12,15 @@ spec:
     helm:
       values: |
         controller:
+          # 🌟 [추가] infra 노드 고정 및 테인트 허용 설정
+          nodeSelector:
+            role: infra
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "infra"
+              effect: "NoSchedule"
+
           # 🌟 [수정] 한국 시간 설정 + 플러그인 설치 타임아웃 대폭 연장 (5분)
           javaOpts: "-Duser.timezone=Asia/Seoul -DpluginManager.connectionTimeout=300000 -DpluginManager.readTimeout=300000"
 
@@ -148,7 +157,7 @@ spec:
         persistence:
           enabled: true
           existingClaim: jenkins-pvc
-          storageClass: "gp3"
+          storageClass: "gp2"
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: jenkins

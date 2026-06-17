@@ -8,10 +8,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: 'http://gitlab-service.jenkins.svc.cluster.local:8080/root/gitops-repo.git'
+    repoURL: 'http://10.0.4.10:8080/root/gitops-repo.git'
     targetRevision: main
     path: clusters/hub/apps
-    # 수정된 부분: 디렉토리 옵션 대신 helm 옵션을 명시하여 values.yaml을 읽도록 지시
     helm:
       valueFiles:
         - values.yaml
