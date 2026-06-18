@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://kubernetes-sigs.github.io/external-dns/'
+    chart: external-dns
+    targetRevision: 1.14.3
+    helm:
+      values: |
+        provider: aws
+        aws:
+          zoneType: private
+        domainFilters:
+          - monitoring.local # Route53 호스팅 영역
+        serviceAccount:
+          create: true
+          name: external-dns
+          annotations:
+            # AWS SSM에서 역할을 읽어오기 위한 설정 (실제 적용 시 외부 데이터 주입 필요)
+            eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/ExternalDNS-Role" 
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

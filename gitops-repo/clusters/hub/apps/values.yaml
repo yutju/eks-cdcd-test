@@ -1,2 +1,4 @@
 global:
   gitlabUrl: "http://10.0.4.10:8080"
+  # 모든 엣지 클러스터가 참조하는 도메인으로 일괄 변경
+  hubPrometheusUrl: "http://prometheus.monitoring.local:9090/api/v1/write"

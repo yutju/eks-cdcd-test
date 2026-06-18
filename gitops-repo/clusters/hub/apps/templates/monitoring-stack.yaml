@@ -23,8 +23,13 @@ spec:
                 value: "infra"
                 effect: "NoSchedule"
           service:
-            type: NodePort
-            nodePort: 30090
+            # NLB 및 고정 도메인 설정을 위한 변경
+            type: LoadBalancer
+            annotations:
+              service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+              service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+              # ExternalDNS가 Route53에 등록할 도메인
+              external-dns.alpha.kubernetes.io/hostname: "prometheus.monitoring.local"
         
         grafana:
           enabled: true
@@ -56,7 +61,7 @@ spec:
               value: "infra"
               effect: "NoSchedule"
         
-        # 🌟 [수정] Fargate 노드 제외 및 데몬셋 스케줄링 최적화
+        # Fargate 노드 제외 및 데몬셋 스케줄링 최적화
         prometheus-node-exporter:
           enabled: true
           affinity:
