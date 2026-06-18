@@ -14,22 +14,31 @@ spec:
         provider: aws
         aws:
           zoneType: private
+        #  도메인 필터는 여기에
         domainFilters:
           - monitoring.local
+        
         serviceAccount:
           create: true
           name: external-dns
-          annotations:
-            # IAM Role ARN (SSM에서 관리 중인 Role을 사용)
-            eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/ExternalDNS-Role"
-        #  파드 보안 설정 최적화
-        podAnnotations:
-          eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/ExternalDNS-Role"
-        # ExternalDNS가 도메인을 더 잘 찾도록 추가 옵션
-        extraArgs:
-          - --policy=upsert-only
-          - --registry=txt
-          - --txt-owner-id=my-cluster-id
+          # 어노테이션은 여기서 빼고, 파드 내부 환경변수로 제어 (ESO 방식)
+        
+        #  정책 및 등록 방식은 values 안에 명시 (extraArgs 충돌 방지)
+        policy: upsert-only
+        registry: txt
+        txtOwnerId: my-cluster-id
+        sources:
+          - service
+          - ingress
+
+        #  우리가 약속한 시크릿 참조 (ESO 방식)
+        extraEnv:
+          - name: AWS_ROLE_ARN
+            valueFrom:
+              secretKeyRef:
+                name: external-dns-secret-k8s
+                key: role-arn
+
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: monitoring
