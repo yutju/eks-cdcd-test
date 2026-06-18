@@ -29,21 +29,26 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Step 3: ArgoCD 본체 매니페스트 다운로드 및 인프라 노드 배치 설정 주입
+# Step 3: ArgoCD 본체 배포 및 인프라 노드 배치 설정 (반복문 패치 방식)
 echo "[3/6] ArgoCD 인프라 본체 배포 진행 중 (Infra 노드 고정)..."
 
-# 공식 매니페스트 다운로드
-curl -s https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml > argocd-install.yaml
+# 공식 매니페스트 배포
+kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-# 🌟 중요: 모든 Deployment와 StatefulSet에 nodeSelector 및 tolerations 강제 삽입
-sed -i '/spec:/a \      nodeSelector:\n        role: infra\n      tolerations:\n        - key: "dedicated"\n          operator: "Equal"\n          value: "infra"\n          effect: "NoSchedule"' argocd-install.yaml
+# Deployment 및 StatefulSet에 패치 적용
+echo "🌟 인프라 노드 고정 패치 적용 중..."
+PATCH_JSON='{"spec": {"template": {"spec": {"nodeSelector": {"role": "infra"}, "tolerations": [{"key": "dedicated", "operator": "Equal", "value": "infra", "effect": "NoSchedule"}]}}}}'
 
-# 수정된 매니페스트 배포
-kubectl apply -n argocd --server-side --force-conflicts -f argocd-install.yaml
-rm argocd-install.yaml
+for deploy in $(kubectl get deployments -n argocd -o name); do
+  kubectl patch $deploy -n argocd -p "$PATCH_JSON"
+done
+
+for stateful in $(kubectl get statefulsets -n argocd -o name); do
+  kubectl patch $stateful -n argocd -p "$PATCH_JSON"
+done
 
 if [ $? -ne 0 ]; then
-    echo "❌ 에러: ArgoCD 본체 설치에 실패했습니다."
+    echo "❌ 에러: ArgoCD 본체 설치 및 패치에 실패했습니다."
     exit 1
 fi
 
