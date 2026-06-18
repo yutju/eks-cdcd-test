@@ -15,15 +15,27 @@ spec:
         aws:
           zoneType: private
         domainFilters:
-          - monitoring.local # Route53 호스팅 영역
+          - monitoring.local
         serviceAccount:
           create: true
           name: external-dns
           annotations:
-            # AWS SSM에서 역할을 읽어오기 위한 설정 (실제 적용 시 외부 데이터 주입 필요)
-            eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/ExternalDNS-Role" 
+            # IAM Role ARN (SSM에서 관리 중인 Role을 사용)
+            eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/ExternalDNS-Role"
+        #  파드 보안 설정 최적화
+        podAnnotations:
+          eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/ExternalDNS-Role"
+        # ExternalDNS가 도메인을 더 잘 찾도록 추가 옵션
+        extraArgs:
+          - --policy=upsert-only
+          - --registry=txt
+          - --txt-owner-id=my-cluster-id
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: monitoring
   syncPolicy:
-    automated: { prune: true, selfHeal: true }
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
