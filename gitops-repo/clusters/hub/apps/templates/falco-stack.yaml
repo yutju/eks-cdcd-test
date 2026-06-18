@@ -9,33 +9,31 @@ spec:
   source:
     repoURL: 'https://falcosecurity.github.io/charts'
     chart: falco
-    targetRevision: 4.10.0 # 버전
+    targetRevision: 4.10.0
     helm:
       values: |
         falco:
           jsonOutput: true
-          # 🌟 [수정] 모든 노드(EC2)에서 보안 감시를 수행하되, 
-          # Fargate 노드에서는 동작하지 않도록 Node Affinity 설정
-          affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: eks.amazonaws.com/compute-type
-                    operator: NotIn
-                    values:
-                    - fargate
+        
+        # affinity는 falco 블록에서 빼내고, Pod 레벨의 설정을 지원하는 
+        # 차트의 표준 필드인 nodeSelector를 사용합니다.
+        nodeSelector:
+          eks.amazonaws.com/compute-type: ec2
+
+        # 보안 모듈이 커널에 접근하기 위한 필수 권한
+        securityContext:
+          privileged: true
 
   destination:
     server: 'https://kubernetes.default.svc'
-    namespace: security # 보안 관련 네임스페이스
+    namespace: security
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     retry:
-      limit: 5 # 최대 5회까지 재시도
+      limit: 5
       backoff:
-        duration: 5s # 1차 실패 시 5초 대기
-        factor: 2    # 실패할 때마다 대기 시간을 2배씩 늘림 (5초 -> 10초 -> 20초)
-        maxDuration: 3m # 아무리 길어져도 최대 3분 간격으로 계속 찌름
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
