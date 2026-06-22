@@ -1,3 +1,4 @@
+
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -17,22 +18,54 @@ spec:
           enabled: false
         prometheus-node-exporter:
           enabled: true
-          nodeSelector:
-            eks.amazonaws.com/compute-type: ec2
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: eks.amazonaws.com/nodegroup
+                    operator: In
+                    values:
+                    - his-main-ng-kafka
+                    - his-main-vdi-node-group
         kube-state-metrics:
           enabled: true
-          nodeSelector:
-            eks.amazonaws.com/compute-type: ec2
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: eks.amazonaws.com/nodegroup
+                    operator: In
+                    values:
+                    - his-main-ng-kafka
+                    - his-main-vdi-node-group
         prometheusOperator:
-          nodeSelector:
-            eks.amazonaws.com/compute-type: ec2
-        # 🌟 프로메테우스를 가벼운 수집기(Agent)로 변경하여 리소스 낭비 방지
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: eks.amazonaws.com/nodegroup
+                    operator: In
+                    values:
+                    - his-main-ng-kafka
+                    - his-main-vdi-node-group
+        # 프로메테우스를 가벼운 수집기(Agent)로 변경
         prometheus:
           enabled: true
           agentMode: true
           prometheusSpec:
-            nodeSelector:
-              eks.amazonaws.com/compute-type: ec2
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                  - matchExpressions:
+                    - key: eks.amazonaws.com/nodegroup
+                      operator: In
+                      values:
+                      - his-main-ng-kafka
+                      - his-main-vdi-node-group
             remoteWrite:
               - url: "{{ .Values.global.hubPrometheusUrl }}"
   destination:
