@@ -11,30 +11,31 @@ spec:
     targetRevision: 56.6.2
     helm:
       values: |
-        grafana:
-          enabled: false
-        alertmanager:
-          enabled: false
+        grafana: { enabled: false }
+        alertmanager: { enabled: false }
         prometheus-node-exporter:
           enabled: true
-          nodeSelector:
-            eks.amazonaws.com/compute-type: ec2
+          affinity: &global-affinity
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values: [fargate]
         kube-state-metrics:
           enabled: true
-          nodeSelector:
-            eks.amazonaws.com/compute-type: ec2
+          affinity: *global-affinity
         prometheusOperator:
-          nodeSelector:
-            eks.amazonaws.com/compute-type: ec2
-        # 🌟 프로메테우스를 가벼운 수집기(Agent)로 변경하여 리소스 낭비 방지
+          enabled: true
+          affinity: *global-affinity
         prometheus:
           enabled: true
           agentMode: true
           prometheusSpec:
-            nodeSelector:
-              eks.amazonaws.com/compute-type: ec2
+            affinity: *global-affinity
             remoteWrite:
-              - url: "{{ .Values.global.hubPrometheusUrl }}"
+              - url: "http://prometheus:9090/api/v1/write"
   destination:
     server: '{{ .Values.global.edgeApiUrl }}'
     namespace: monitoring

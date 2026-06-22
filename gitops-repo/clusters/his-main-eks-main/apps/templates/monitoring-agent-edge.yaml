@@ -1,4 +1,3 @@
-
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -23,11 +22,9 @@ spec:
               requiredDuringSchedulingIgnoredDuringExecution:
                 nodeSelectorTerms:
                 - matchExpressions:
-                  - key: eks.amazonaws.com/nodegroup
-                    operator: In
-                    values:
-                    - his-main-ng-kafka
-                    - his-main-vdi-node-group
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values: [fargate]
         kube-state-metrics:
           enabled: true
           affinity:
@@ -35,23 +32,19 @@ spec:
               requiredDuringSchedulingIgnoredDuringExecution:
                 nodeSelectorTerms:
                 - matchExpressions:
-                  - key: eks.amazonaws.com/nodegroup
-                    operator: In
-                    values:
-                    - his-main-ng-kafka
-                    - his-main-vdi-node-group
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values: [fargate]
         prometheusOperator:
+          enabled: true
           affinity:
             nodeAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
                 nodeSelectorTerms:
                 - matchExpressions:
-                  - key: eks.amazonaws.com/nodegroup
-                    operator: In
-                    values:
-                    - his-main-ng-kafka
-                    - his-main-vdi-node-group
-        # 프로메테우스를 가벼운 수집기(Agent)로 변경
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values: [fargate]
         prometheus:
           enabled: true
           agentMode: true
@@ -61,13 +54,11 @@ spec:
                 requiredDuringSchedulingIgnoredDuringExecution:
                   nodeSelectorTerms:
                   - matchExpressions:
-                    - key: eks.amazonaws.com/nodegroup
-                      operator: In
-                      values:
-                      - his-main-ng-kafka
-                      - his-main-vdi-node-group
+                    - key: eks.amazonaws.com/compute-type
+                      operator: NotIn
+                      values: [fargate]
             remoteWrite:
-              - url: "{{ .Values.global.hubPrometheusUrl }}"
+              - url: "http://prometheus:9090/api/v1/write"
   destination:
     server: '{{ .Values.global.edgeApiUrl }}'
     namespace: monitoring
