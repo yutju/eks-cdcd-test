@@ -1,0 +1,10 @@
+# 수정된 prometheus-alias.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus  # 이제 엣지에서 이 이름으로 호출
+  namespace: monitoring
+spec:
+  type: ExternalName
+  # 로드밸런서가 붙은 실제 서비스 이름을 가리켜야 합니다.
+  externalName: monitoring-stack-kube-prom-prometheus.monitoring.svc.cluster.local

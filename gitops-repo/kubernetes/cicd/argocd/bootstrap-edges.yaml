@@ -17,19 +17,19 @@ spec:
     spec:
       project: default
       source:
-        #  GitLab 외부 인스턴스 IP 주소로 변경
+        # GitLab 외부 인스턴스 IP 주소
         repoURL: 'http://10.0.4.10:8080/root/gitops-repo.git'
         targetRevision: main
         path: 'clusters/{{name}}/apps' # 클러스터 이름별 폴더 구조 필요 (edge-1, edge-2 등)
         helm:
           parameters:
-            #  헬름 파라미터도 외부 IP로 일괄 변경
             - name: global.gitlabUrl
               value: 'http://10.0.4.10:8080'
             - name: global.edgeApiUrl
               value: '{{server}}' 
+            # 🌟 정답: 아까 만든 Alias 서비스(prometheus)를 가리킵니다!
             - name: global.hubPrometheusUrl
-              value: 'http://prometheus.monitoring.local:9090/api/v1/write'
+              value: 'http://prometheus:9090/api/v1/write'
       destination:
         server: '{{server}}' # 등록된 클러스터의 API 서버로 배포
         namespace: default
