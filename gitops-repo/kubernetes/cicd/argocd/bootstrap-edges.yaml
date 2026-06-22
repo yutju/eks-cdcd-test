@@ -29,7 +29,7 @@ spec:
             - name: global.edgeApiUrl
               value: '{{server}}' 
             - name: global.hubPrometheusUrl
-              value: 'http://<허브-프로메테우스-주소>:9090/api/v1/write'
+              value: 'http://prometheus.monitoring.local:9090/api/v1/write'
       destination:
         server: '{{server}}' # 등록된 클러스터의 API 서버로 배포
         namespace: default
