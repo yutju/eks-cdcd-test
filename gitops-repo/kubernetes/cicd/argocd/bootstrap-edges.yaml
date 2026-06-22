@@ -6,34 +6,35 @@ metadata:
 spec:
   generators:
     - clusters:
-        # ArgoCD에 'cluster' 타입으로 등록된 모든 대상을 자동으로 타겟팅
+        # 수정한 부분: 우리가 등록할 때 사용한 라벨(edge=true)을 정확히 타겟팅
         selector:
           matchLabels:
-            argocd.argoproj.io/secret-type: cluster
+            edge: "true"
   template:
     metadata:
-      # 등록된 클러스터의 이름을 기반으로 앱 생성
+      # 클러스터 이름 기반으로 앱 생성
       name: '{{name}}-bootstrap'
     spec:
       project: default
       source:
-        # GitLab 외부 인스턴스 IP 주소
         repoURL: 'http://10.0.4.10:8080/root/gitops-repo.git'
         targetRevision: main
-        path: 'clusters/{{name}}/apps' # 클러스터 이름별 폴더 구조 필요 (edge-1, edge-2 등)
+        path: 'clusters/{{name}}/apps'
         helm:
           parameters:
             - name: global.gitlabUrl
               value: 'http://10.0.4.10:8080'
             - name: global.edgeApiUrl
-              value: '{{server}}' 
-            # 🌟 정답: 아까 만든 Alias 서비스(prometheus)를 가리킵니다!
+              value: '{{server}}'
             - name: global.hubPrometheusUrl
               value: 'http://prometheus.monitoring.local/api/v1/write'
       destination:
-        server: '{{server}}' # 등록된 클러스터의 API 서버로 배포
-        namespace: default
+        server: '{{server}}'
+        # 중요: 모든 클러스터에 배포될 네임스페이스를 'argocd'로 통일하여 관리 권한 확보
+        namespace: argocd
       syncPolicy:
         automated:
           prune: true
           selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
