@@ -15,48 +15,19 @@ spec:
           enabled: false
         alertmanager:
           enabled: false
+        
+        # 노드 제약(Affinity)을 모두 제거하여 모든 노드에 배포되도록 수정
         prometheus-node-exporter:
           enabled: true
-          affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: eks.amazonaws.com/compute-type
-                    operator: NotIn
-                    values: [fargate]
         kube-state-metrics:
           enabled: true
-          affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: eks.amazonaws.com/compute-type
-                    operator: NotIn
-                    values: [fargate]
         prometheusOperator:
           enabled: true
-          affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: eks.amazonaws.com/compute-type
-                    operator: NotIn
-                    values: [fargate]
+        
         prometheus:
           enabled: true
           agentMode: true
           prometheusSpec:
-            affinity:
-              nodeAffinity:
-                requiredDuringSchedulingIgnoredDuringExecution:
-                  nodeSelectorTerms:
-                  - matchExpressions:
-                    - key: eks.amazonaws.com/compute-type
-                      operator: NotIn
-                      values: [fargate]
             remoteWrite:
               - url: "http://prometheus:9090/api/v1/write"
   destination:

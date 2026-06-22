@@ -14,7 +14,7 @@ spec:
         falco:
           jsonOutput: true
         
-        # 🌟 노드 그룹 제약 제거 및 Fargate 배제 방식의 affinity 적용
+        # 노드 제한: 일반 EC2 노드라면 어디든 배포
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
@@ -23,10 +23,16 @@ spec:
                 - key: eks.amazonaws.com/compute-type
                   operator: NotIn
                   values: [fargate]
-                  
-        # Falco가 커널 이벤트를 감시하기 위한 필수 권한 (Privileged)
+        
+        # 보안 및 권한 설정
         securityContext:
           privileged: true
+        
+        # Falco 서비스 계정 명시 (권한 충돌 방지)
+        serviceAccount:
+          create: true
+          name: falco
+
   destination:
     server: '{{ .Values.global.edgeApiUrl }}'
     namespace: security

@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: edge-1-falco
+  name: edge-1-falco 
   namespace: argocd
 spec:
   project: default
@@ -13,6 +13,9 @@ spec:
       values: |
         falco:
           jsonOutput: true
+        
+        # 노드 제한 제거: 모든 EC2 노드에서 실행 가능하도록 설정
+        # 괄호 안의 affinity 블록 전체를 아래 코드로 대체하세요.
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
@@ -21,6 +24,7 @@ spec:
                 - key: eks.amazonaws.com/compute-type
                   operator: NotIn
                   values: [fargate]
+        
         securityContext:
           privileged: true
   destination:

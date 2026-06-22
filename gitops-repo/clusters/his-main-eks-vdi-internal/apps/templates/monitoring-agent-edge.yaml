@@ -11,29 +11,25 @@ spec:
     targetRevision: 56.6.2
     helm:
       values: |
-        grafana: { enabled: false }
-        alertmanager: { enabled: false }
+        grafana:
+          enabled: false
+        alertmanager:
+          enabled: false
+        
+        # 모든 노드 제약(affinity)을 제거하여 어떤 EC2 노드에서든 실행되도록 설정
         prometheus-node-exporter:
           enabled: true
-          affinity: &global-affinity
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: eks.amazonaws.com/compute-type
-                    operator: NotIn
-                    values: [fargate]
+        
         kube-state-metrics:
           enabled: true
-          affinity: *global-affinity
+          
         prometheusOperator:
           enabled: true
-          affinity: *global-affinity
+        
         prometheus:
           enabled: true
           agentMode: true
           prometheusSpec:
-            affinity: *global-affinity
             remoteWrite:
               - url: "http://prometheus:9090/api/v1/write"
   destination:
