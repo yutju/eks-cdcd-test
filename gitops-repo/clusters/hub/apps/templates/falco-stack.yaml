@@ -15,10 +15,9 @@ spec:
         falco:
           jsonOutput: true
         
-        # affinity는 falco 블록에서 빼내고, Pod 레벨의 설정을 지원하는 
-        # 차트의 표준 필드인 nodeSelector를 사용합니다.
+        # Fargate를 제외하고, Falco가 정상 작동할 수 있는 infra 노드로 고정
         nodeSelector:
-          eks.amazonaws.com/compute-type: ec2
+          role: infra
 
         # 보안 모듈이 커널에 접근하기 위한 필수 권한
         securityContext:
