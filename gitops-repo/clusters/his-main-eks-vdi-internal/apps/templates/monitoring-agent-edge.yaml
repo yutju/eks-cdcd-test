@@ -15,23 +15,25 @@ spec:
           enabled: false
         alertmanager:
           enabled: false
-        
+
         # 모든 노드 제약(affinity)을 제거하여 어떤 EC2 노드에서든 실행되도록 설정
         prometheus-node-exporter:
           enabled: true
-        
         kube-state-metrics:
           enabled: true
-          
         prometheusOperator:
           enabled: true
-        
+
         prometheus:
           enabled: true
           agentMode: true
           prometheusSpec:
             remoteWrite:
-              - url: "http://prometheus:9090/api/v1/write"
+              - url: "http://prometheus.monitoring.local:9090/api/v1/write"
+                # 🌟 vdi 클러스터 데이터에 'cluster: edge-2' 라벨 추가
+                writeRelabelConfigs:
+                - targetLabel: cluster
+                  replacement: edge-2
   destination:
     server: '{{ .Values.global.edgeApiUrl }}'
     namespace: monitoring

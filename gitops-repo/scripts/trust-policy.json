@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Federated": "arn:aws:iam::278584440977:oidc-provider/oidc.eks.ap-northeast-2.amazonaws.com/id/BDA129A1FAE6143979394E53BB5997AD" },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "oidc.eks.ap-northeast-2.amazonaws.com/id/BDA129A1FAE6143979394E53BB5997AD:sub": "system:serviceaccount:monitoring:external-dns"
+        }
+      }
+    }
+  ]
+}

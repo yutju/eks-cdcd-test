@@ -1,4 +1,3 @@
-
 #!/bin/bash
 CLUSTER_NAME="his-main-eks-devops"
 ROLE_NAME="his-main-external-dns-role"
@@ -28,5 +27,9 @@ EOF
 
 # 3. 정책 적용
 aws iam update-assume-role-policy --role-name $ROLE_NAME --policy-document file://trust-policy.json
-echo "✅ IAM 신뢰 정책 업데이트 완료!"
+echo " IAM 신뢰 정책 업데이트 완료!"
 
+# 🌟 4. [추가됨] 귀찮은 파드 재시작 자동화
+echo " 새로운 권한을 적용하기 위해 ExternalDNS 파드를 재시작합니다..."
+kubectl rollout restart deployment external-dns -n monitoring
+echo "모든 복구 프로세스가 1초 만에 완료되었습니다!"
