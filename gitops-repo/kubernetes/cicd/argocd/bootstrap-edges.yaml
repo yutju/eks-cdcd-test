@@ -29,7 +29,7 @@ spec:
               value: '{{server}}' 
             # 🌟 정답: 아까 만든 Alias 서비스(prometheus)를 가리킵니다!
             - name: global.hubPrometheusUrl
-              value: 'http://prometheus:9090/api/v1/write'
+              value: 'http://prometheus.monitoring.local/api/v1/write'
       destination:
         server: '{{server}}' # 등록된 클러스터의 API 서버로 배포
         namespace: default
