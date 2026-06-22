@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edge-bootstrap-crd
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # 엣지 클러스터에 CRD를 설치하는 명령어와 동일한 효과
+    repoURL: 'https://github.com/argoproj/argo-cd'
+    targetRevision: stable
+    path: manifests/crds
+  destination:
+    server: '{{server}}' # ApplicationSet의 변수
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

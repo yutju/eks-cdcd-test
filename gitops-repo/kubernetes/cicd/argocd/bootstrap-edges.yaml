@@ -6,13 +6,12 @@ metadata:
 spec:
   generators:
     - clusters:
-        # 수정한 부분: 우리가 등록할 때 사용한 라벨(edge=true)을 정확히 타겟팅
+        # edge=true 라벨이 붙은 클러스터만 타겟팅
         selector:
           matchLabels:
             edge: "true"
   template:
     metadata:
-      # 클러스터 이름 기반으로 앱 생성
       name: '{{name}}-bootstrap'
     spec:
       project: default
@@ -30,7 +29,6 @@ spec:
               value: 'http://prometheus.monitoring.local/api/v1/write'
       destination:
         server: '{{server}}'
-        # 중요: 모든 클러스터에 배포될 네임스페이스를 'argocd'로 통일하여 관리 권한 확보
         namespace: argocd
       syncPolicy:
         automated:
