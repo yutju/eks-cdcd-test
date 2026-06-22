@@ -3,18 +3,29 @@ kind: Application
 metadata:
   name: edge-2-falco
   namespace: argocd
+
 spec:
   project: default
+
   source:
-    repoURL: 'https://falcosecurity.github.io/charts'
+    repoURL: https://falcosecurity.github.io/charts
     chart: falco
-    targetRevision: 4.10.0
+    targetRevision: 7.0.0
+
     helm:
       values: |
         falco:
-          jsonOutput: true
-        
-        # 노드 제한: 일반 EC2 노드라면 어디든 배포
+          grpc:
+            enabled: false
+
+          grpcOutput:
+            enabled: false
+
+        tty: true
+
+        collectors:
+          enabled: true
+
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
@@ -22,21 +33,22 @@ spec:
               - matchExpressions:
                 - key: eks.amazonaws.com/compute-type
                   operator: NotIn
-                  values: [fargate]
-        
-        # 보안 및 권한 설정
+                  values:
+                  - fargate
+
+        podSecurityContext: {}
+
         securityContext:
           privileged: true
-        
-        # Falco 서비스 계정 명시 (권한 충돌 방지)
-        serviceAccount:
-          create: true
-          name: falco
 
   destination:
     server: '{{ .Values.global.edgeApiUrl }}'
     namespace: security
+
   syncPolicy:
-    automated: { prune: true, selfHeal: true }
+    automated:
+      prune: true
+      selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
