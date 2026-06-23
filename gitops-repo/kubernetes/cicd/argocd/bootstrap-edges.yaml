@@ -24,13 +24,14 @@ spec:
           parameters:
             - name: global.gitlabUrl
               value: 'http://10.0.4.10:8080'
-            # 🌟 자식 앱(Falco 등)이 엣지로 찾아갈 수 있도록 목적지 IP를 변수로 전달
+            # 🌟 수정: {{server}} 대신 ArgoCD가 제공하는 {{url}} 변수를 사용합니다.
+            # {{url}}은 클러스터 등록 시 설정한 서버 URL과 동일합니다.
             - name: global.edgeApiUrl
-              value: '{{server}}'
+              value: '{{url}}' 
             - name: global.hubPrometheusUrl
               value: 'http://prometheus.monitoring.local/api/v1/write'
       destination:
-        # 🌟 핵심 수정: 부모 앱(Bootstrap 설계서) 자체는 반드시 '허브 클러스터'에 생성되어야 합니다!
+        # 🌟 bootstrap 앱 자체는 항상 허브(in-cluster)에 생성
         server: 'https://kubernetes.default.svc'
         namespace: argocd
       syncPolicy:
