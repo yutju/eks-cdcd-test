@@ -1,56 +1,58 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: edge-1-falco
+  name: hub-falco  # hub
   namespace: argocd
-
 spec:
   project: default
-
   source:
     repoURL: https://falcosecurity.github.io/charts
     chart: falco
-
-    # Hub와 동일한 최신 Chart
     targetRevision: 7.0.0
-
     helm:
       values: |
         falco:
+          jsonOutput: true
+          jsonIncludeOutputProperty: true
           grpc:
             enabled: false
-
           grpcOutput:
             enabled: false
-
-        tty: true
-
-        collectors:
+          tty: true
+          collectors:
+            enabled: true
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values:
+                    - fargate
+          podSecurityContext: {}
+          securityContext:
+            privileged: true
+        
+        # 허브 자체 모니터링 연동
+        falcosidekick:
           enabled: true
-
-        affinity:
-          nodeAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-              - matchExpressions:
-                - key: eks.amazonaws.com/compute-type
-                  operator: NotIn
-                  values:
-                  - fargate
-
-        podSecurityContext: {}
-
-        securityContext:
-          privileged: true
+          webui:
+            enabled: true # 허브에서는 UI
+            service:
+              type: ClusterIP
+          config:
+            prometheus:
+              enabled: true
+          serviceMonitor:
+            enabled: true
 
   destination:
-    server: '{{ .Values.global.edgeApiUrl }}'
+    server: 'https://kubernetes.default.svc' # 핵심: 허브 자기 자신에게 배포
     namespace: security
-
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
-
     syncOptions:
       - CreateNamespace=true

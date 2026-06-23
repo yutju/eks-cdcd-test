@@ -1,54 +1,56 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: edge-2-falco
+  name: edge-vdi-falco  # 1. vdi 클러스터 전용
   namespace: argocd
-
 spec:
   project: default
-
   source:
     repoURL: https://falcosecurity.github.io/charts
     chart: falco
     targetRevision: 7.0.0
-
     helm:
       values: |
         falco:
+          jsonOutput: true  # 2. 중앙 프로메테우스 연동을 위한 필수 설정 (JSON 포맷)
+          jsonIncludeOutputProperty: true
           grpc:
             enabled: false
-
           grpcOutput:
             enabled: false
+          tty: true
+          collectors:
+            enabled: true
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: eks.amazonaws.com/compute-type
+                    operator: NotIn
+                    values:
+                    - fargate
+          podSecurityContext: {}
+          securityContext:
+            privileged: true
 
-        tty: true
-
-        collectors:
+        # 3. 엣지 보안 이벤트를 허브로 보내기 위한 Falcosidekick 활성화
+        falcosidekick:
           enabled: true
-
-        affinity:
-          nodeAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-              - matchExpressions:
-                - key: eks.amazonaws.com/compute-type
-                  operator: NotIn
-                  values:
-                  - fargate
-
-        podSecurityContext: {}
-
-        securityContext:
-          privileged: true
+          webui:
+            enabled: false  # 엣지 클러스터는 리소스를 아끼기 위해 UI 비활성화
+          config:
+            prometheus:
+              enabled: true
+          serviceMonitor:
+            enabled: true
 
   destination:
-    server: '{{ .Values.global.edgeApiUrl }}'
+    server: '{{ .Values.global.edgeApiUrl }}'  # 글로벌 변수 그대로 사용
     namespace: security
-
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
-
     syncOptions:
       - CreateNamespace=true
