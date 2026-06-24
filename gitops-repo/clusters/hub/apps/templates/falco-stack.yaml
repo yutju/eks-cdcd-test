@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: hub-falco  # hub
+  name: hub-falco
   namespace: argocd
 spec:
   project: default
@@ -33,22 +33,24 @@ spec:
           podSecurityContext: {}
           securityContext:
             privileged: true
-        
-        # 허브 자체 모니터링 연동
+
         falcosidekick:
           enabled: true
-          webui:
-            enabled: true # 허브에서는 UI
-            service:
-              type: ClusterIP
           config:
             prometheus:
               enabled: true
           serviceMonitor:
             enabled: true
+          webui:
+            enabled: true
+            # Redis 영구 저장소 비활성화 (정확한 위치)
+            redis:
+              storageEnabled: false
+            service:
+              type: ClusterIP
 
   destination:
-    server: 'https://kubernetes.default.svc' # 핵심: 허브 자기 자신에게 배포
+    server: 'https://kubernetes.default.svc'
     namespace: security
   syncPolicy:
     automated:

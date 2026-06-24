@@ -12,7 +12,13 @@ spec:
     helm:
       values: |
         controller:
-          # 🌟 [추가] infra 노드 고정 및 테인트 허용 설정
+          # 커스텀 이미지 사용 (registry 분리로 docker.io prefix 방지)
+          image:
+            registry: "278584440977.dkr.ecr.ap-northeast-2.amazonaws.com"
+            repository: "dev-apps/jenkins"
+            tag: "custom"
+            pullPolicy: Always
+
           nodeSelector:
             role: infra
           tolerations:
@@ -21,32 +27,19 @@ spec:
               value: "infra"
               effect: "NoSchedule"
 
-          # 🌟 [수정] 한국 시간 설정 + 플러그인 설치 타임아웃 대폭 연장 (5분)
-          javaOpts: "-Duser.timezone=Asia/Seoul -DpluginManager.connectionTimeout=300000 -DpluginManager.readTimeout=300000"
+          javaOpts: "-Duser.timezone=Asia/Seoul"
 
-          serviceType: LoadBalancer
+          serviceType: NodePort
           servicePort: 8080
+          nodePort: 32080
           agentListenerPort: 50000
-          
-          serviceAnnotations:
-            service.beta.kubernetes.io/aws-load-balancer-internal: "true"
-            service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-            # 🌟 [추가] 노드 IP가 바뀌어도 NLB가 파드를 직접 찾아가도록 고정 설정
-            service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+          agentListenerServiceType: NodePort
+          agentListenerNodePort: 32050
 
-          # 🌟 [수정] 자동 설치 시도 (네트워크 환경에 맞춰 최적화)
-          installLatestPlugins: true
-          installLatestSpecifiedPlugins: true
-          installPlugins:
-            - kubernetes
-            - workflow-aggregator
-            - git
-            - configuration-as-code
-            - job-dsl
-            - gitlab-plugin
-            - credentials-binding
-            - plain-credentials
-            - aws-credentials
+          # 플러그인 설치 로직 완전 OFF (커스텀 이미지에 내장)
+          installLatestPlugins: false
+          installLatestSpecifiedPlugins: false
+          installPlugins: []
 
           admin:
             existingSecret: "jenkins-stack"
@@ -54,41 +47,24 @@ spec:
             passwordKey: "jenkins-admin-password"
 
           containerEnv:
-            # 🌟 [추가] 업데이트 센터 접속 실패 방지를 위한 안정적인 미러 서버 설정
             - name: JENKINS_UC
-              value: "https://mirrors.tuna.tsinghua.edu.cn/jenkins/updates/update-center.json"
+              value: "https://mirror.kakao.com/jenkins/updates/update-center.json"
             - name: JENKINS_UC_EXPERIMENTAL
-              value: "https://mirrors.tuna.tsinghua.edu.cn/jenkins/updates/experimental/update-center.json"
+              value: "https://mirror.kakao.com/jenkins/updates/experimental/update-center.json"
+            - name: TRY_UPGRADE_IF_NO_MARKER
+              value: "false"
             - name: GITLAB_TOKEN_ENV
-              valueFrom:
-                secretKeyRef:
-                  name: gitlab-api-secret
-                  key: api-token
+              valueFrom: { secretKeyRef: { name: gitlab-api-secret, key: api-token } }
             - name: CM_GITLAB_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: jenkins-infra-config
-                  key: GITLAB_URL
+              valueFrom: { configMapKeyRef: { name: jenkins-infra-config, key: GITLAB_URL } }
             - name: CM_JENKINS_IP
-              valueFrom:
-                configMapKeyRef:
-                  name: jenkins-infra-config
-                  key: JENKINS_IP
+              valueFrom: { configMapKeyRef: { name: jenkins-infra-config, key: JENKINS_IP } }
             - name: CM_JENKINS_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: jenkins-infra-config
-                  key: JENKINS_PORT
-            - name: AWS_ECR_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aws-ecr-secret
-                  key: access-key
-            - name: AWS_ECR_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aws-ecr-secret
-                  key: secret-key
+              valueFrom: { configMapKeyRef: { name: jenkins-infra-config, key: JENKINS_PORT } }
+
+          sidecars:
+            configAutoReload:
+              enabled: true
 
           JCasC:
             defaultConfig: true
@@ -118,12 +94,6 @@ spec:
                               id: "gitlab-checkout-cred"
                               username: "root"
                               password: "${GITLAB_TOKEN_ENV}"
-                          - usernamePassword:
-                              scope: GLOBAL
-                              id: "aws-ecr-cred"
-                              username: "${AWS_ECR_ACCESS_KEY}"
-                              password: "${AWS_ECR_SECRET_KEY}"
-                              description: "AWS ECR Credentials for Pipeline"
                 jobs:
                   - script: >
                       pipelineJob('jenkins-test-pipeline') {
@@ -153,11 +123,11 @@ spec:
 
         agent:
           enabled: true
+          namespace: jenkins
 
         persistence:
           enabled: true
           existingClaim: jenkins-pvc
-          storageClass: "gp2"
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: jenkins
