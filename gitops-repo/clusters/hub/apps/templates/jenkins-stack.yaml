@@ -29,12 +29,11 @@ spec:
 
           javaOpts: "-Duser.timezone=Asia/Seoul"
 
-          serviceType: NodePort
+          # 🌟 [수정됨] 비용 절감 및 내부 보안 통신을 위해 ClusterIP로 변경 (NodePort 삭제)
+          serviceType: ClusterIP
           servicePort: 8080
-          nodePort: 32080
           agentListenerPort: 50000
-          agentListenerServiceType: NodePort
-          agentListenerNodePort: 32050
+          agentListenerServiceType: ClusterIP
 
           # 플러그인 설치 로직 완전 OFF (커스텀 이미지에 내장)
           installLatestPlugins: false

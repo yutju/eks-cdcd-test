@@ -4,9 +4,24 @@ metadata:
   name: jenkins-infra-config
   namespace: jenkins
 data:
-  GITLAB_URL: "http://gitlab-service.jenkins.svc.cluster.local:8080"
+  GITLAB_URL: "http://10.0.4.10:8080"
   GITLAB_USER: "root"
-  JENKINS_IP: "a0bf0658dd67e40c49cebe20bcf20b60-e07338e264d89461.elb.ap-northeast-2.amazonaws.com"
+  JENKINS_IP: "jenkins-stack.jenkins.svc.cluster.local"
+  JENKINS_PORT: "8080"
+  TARGET_NS: "dev-apps"
+  MONITOR_NS: "monitoring"
+
+---
+#  jenkins-build 네임스페이스용 ConfigMap 선언
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-infra-config
+  namespace: jenkins-build
+data:
+  GITLAB_URL: "http://10.0.4.10:8080"
+  GITLAB_USER: "root"
+  JENKINS_IP: "jenkins-stack.jenkins.svc.cluster.local"
   JENKINS_PORT: "8080"
   TARGET_NS: "dev-apps"
   MONITOR_NS: "monitoring"

@@ -18,5 +18,3 @@ spec:
         image: nginx:stable-alpine # 가벼운 알파인 리눅스 기반 Nginx 이미지
         ports:
         - containerPort: 80  # 컨테이너가 내부적으로 사용하는 포트
-      imagePullSecrets:
-      - name: ecr-secret
