@@ -1,14 +1,12 @@
 #!/bin/bash
 # 엣지 클러스터 라벨 자동 부여 스크립트
+# (his-main-eks-devops는 hub 역할이므로 제외)
 
-# 타겟 클러스터 이름들
-CLUSTERS=("his-main-eks-main" "his-main-eks-devops")
+CLUSTERS=("his-main-eks-main" "his-main-eks-vdi-internal")
 
 echo "🏷️ 엣지 클러스터 라벨링 시작..."
 
 for NAME in "${CLUSTERS[@]}"; do
-    # 1. 시크릿 이름이 계속 바뀌어도 'argocd.argoproj.io/secret-type=cluster' 
-    #    그리고 해당 이름(name)을 가진 시크릿을 검색
     SECRET_NAME=$(kubectl get secret -n argocd \
         -l argocd.argoproj.io/secret-type=cluster \
         -o jsonpath="{.items[?(@.data.name=='$(echo -n $NAME | base64 -w0)')].metadata.name}")
@@ -21,7 +19,7 @@ for NAME in "${CLUSTERS[@]}"; do
     fi
 done
 
-# 2. ArgoCD에 변경사항 반영 트리거
+# ArgoCD에 변경사항 반영 트리거
 kubectl patch applicationset edge-clusters-appset -n argocd \
   -p '{"metadata": {"annotations": {"argocd.argoproj.io/refresh": "hard"}}}' \
   --type=merge

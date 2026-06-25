@@ -23,14 +23,12 @@ spec:
                 value: "infra"
                 effect: "NoSchedule"
           service:
-            # NLB 및 고정 도메인 설정을 위한 변경
             type: LoadBalancer
             annotations:
               service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
               service.beta.kubernetes.io/aws-load-balancer-internal: "true"
-              # ExternalDNS가 Route53에 등록할 도메인
               external-dns.alpha.kubernetes.io/hostname: "prometheus.monitoring.local"
-        
+
         grafana:
           enabled: true
           nodeSelector:
@@ -40,7 +38,15 @@ spec:
               operator: "Equal"
               value: "infra"
               effect: "NoSchedule"
-        
+          # kube-prometheus-stack 56.x + k8s 1.31 호환성 버그 우회
+          # GF_SECURITY_ADMIN_USER/PASSWORD에 value+valueFrom 중복 문제 해결
+          env:
+            GF_SECURITY_ADMIN_USER: admin
+            GF_SECURITY_ADMIN_PASSWORD: ""
+          envFromSecrets:
+            - name: monitoring-stack-grafana
+              optional: true
+
         alertmanager:
           enabled: true
           nodeSelector:
@@ -50,7 +56,7 @@ spec:
               operator: "Equal"
               value: "infra"
               effect: "NoSchedule"
-        
+
         kube-state-metrics:
           enabled: true
           nodeSelector:
@@ -60,8 +66,7 @@ spec:
               operator: "Equal"
               value: "infra"
               effect: "NoSchedule"
-        
-        # Fargate 노드 제외 및 데몬셋 스케줄링 최적화
+
         prometheus-node-exporter:
           enabled: true
           affinity:
