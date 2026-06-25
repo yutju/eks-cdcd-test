@@ -1,36 +1,39 @@
+# gitops-repo/kubernetes/cicd/argocd/bootstrap-edges.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: edge-clusters-appset
   namespace: argocd
 spec:
+  goTemplate: true
+  goTemplateOptions:
+    - "missingkey=error"
   generators:
     - clusters:
+        # edge=true 라벨이 붙은 클러스터만 타겟팅
         selector:
           matchLabels:
             edge: "true"
   template:
     metadata:
-      name: '{{name}}-bootstrap'
+      name: '{{.name}}-bootstrap'
     spec:
       project: default
       source:
         repoURL: 'http://10.0.4.10:8080/root/gitops-repo.git'
         targetRevision: main
-        path: 'clusters/{{name}}/apps'
+        path: 'clusters/{{.name}}/apps'
         helm:
-          # 여기서 valueFiles를 제거하거나 실제 파일이 있는 경로인지 확인하세요.
-          # 에러의 원인이 될 수 있다면 잠시 주석 처리해도 좋습니다.
           parameters:
             - name: global.gitlabUrl
               value: 'http://10.0.4.10:8080'
             - name: global.edgeApiUrl
-              value: '{{server}}' # API 서버 주소를 동적으로 할당
+              value: '{{.server}}'
             - name: global.hubPrometheusUrl
               value: 'http://prometheus.monitoring.local/api/v1/write'
       destination:
-        # 🌟 핵심: {{server}}를 사용하여 각 클러스터로 배포 지시
-        server: '{{server}}'
+        # bootstrap 앱 자체는 항상 허브(in-cluster)에 생성
+        server: 'https://kubernetes.default.svc'
         namespace: argocd
       syncPolicy:
         automated:
@@ -38,3 +41,4 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+
