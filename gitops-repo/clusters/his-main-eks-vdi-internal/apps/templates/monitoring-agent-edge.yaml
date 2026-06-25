@@ -31,7 +31,7 @@ spec:
                 - targetLabel: cluster
                   replacement: edge-2
   destination:
-    name: '{{ .Values.global.edgeClusterName }}'
+    server: '{{ .Values.global.edgeApiUrl }}'
     namespace: monitoring
   syncPolicy:
     automated: { prune: true, selfHeal: true }

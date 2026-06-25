@@ -33,7 +33,6 @@ spec:
           podSecurityContext: {}
           securityContext:
             privileged: true
-
         falcosidekick:
           enabled: true
           webui:
@@ -43,9 +42,8 @@ spec:
               enabled: true
           serviceMonitor:
             enabled: true
-
   destination:
-    name: '{{ .Values.global.edgeClusterName }}'
+    server: '{{ .Values.global.edgeApiUrl }}'
     namespace: security
   syncPolicy:
     automated:

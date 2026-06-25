@@ -33,7 +33,6 @@ spec:
           podSecurityContext: {}
           securityContext:
             privileged: true
-
         falcosidekick:
           enabled: true
           webui:
@@ -43,10 +42,8 @@ spec:
               enabled: true
           serviceMonitor:
             enabled: true
-
   destination:
-    # server 대신 name 사용 - Helm values로 destination 지정하는 올바른 방법
-    name: '{{ .Values.global.edgeClusterName }}'
+    server: '{{ .Values.global.edgeApiUrl }}'
     namespace: security
   syncPolicy:
     automated:

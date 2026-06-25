@@ -28,8 +28,6 @@ spec:
               value: 'http://10.0.4.10:8080'
             - name: global.edgeApiUrl
               value: '{{.server}}'
-            - name: global.edgeClusterName   # destination.name용으로 추가
-              value: '{{.name}}'
             - name: global.hubPrometheusUrl
               value: 'http://prometheus.monitoring.local/api/v1/write'
       destination:

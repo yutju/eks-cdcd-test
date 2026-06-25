@@ -38,14 +38,8 @@ spec:
               operator: "Equal"
               value: "infra"
               effect: "NoSchedule"
-          # kube-prometheus-stack 56.x + k8s 1.31 호환성 버그 우회
-          # GF_SECURITY_ADMIN_USER/PASSWORD에 value+valueFrom 중복 문제 해결
-          env:
-            GF_SECURITY_ADMIN_USER: admin
-            GF_SECURITY_ADMIN_PASSWORD: ""
-          envFromSecrets:
-            - name: monitoring-stack-grafana
-              optional: true
+          # GF_SECURITY_ADMIN_PASSWORD 중복 방지: adminPassword로 직접 지정
+          adminPassword: "admin"
 
         alertmanager:
           enabled: true
