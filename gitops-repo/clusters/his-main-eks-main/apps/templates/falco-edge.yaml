@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: edge-main-falco  # 이름 충돌을 막기 위해 main용으로 변경!
+  name: edge-main-falco
   namespace: argocd
 spec:
   project: default
@@ -12,7 +12,7 @@ spec:
     helm:
       values: |
         falco:
-          jsonOutput: true  # 중앙 모니터링 연동을 위한 JSON 포맷 활성화
+          jsonOutput: true
           jsonIncludeOutputProperty: true
           grpc:
             enabled: false
@@ -34,11 +34,10 @@ spec:
           securityContext:
             privileged: true
 
-        # 엣지에서 발생한 이벤트를 프로메테우스 메트릭으로 변환 (핵심!)
         falcosidekick:
           enabled: true
           webui:
-            enabled: false  # 엣지 클러스터의 리소스 절약을 위해 UI는 끕니다
+            enabled: false
           config:
             prometheus:
               enabled: true
@@ -46,7 +45,8 @@ spec:
             enabled: true
 
   destination:
-    server: '{{ .Values.global.edgeApiUrl }}'  # 이 변수 처리는 아주 잘하셨습니다!
+    # server 대신 name 사용 - Helm values로 destination 지정하는 올바른 방법
+    name: '{{ .Values.global.edgeClusterName }}'
     namespace: security
   syncPolicy:
     automated:

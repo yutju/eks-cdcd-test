@@ -15,27 +15,24 @@ spec:
           enabled: false
         alertmanager:
           enabled: false
-
-        # 노드 제약(Affinity)을 모두 제거하여 모든 노드에 배포되도록 수정
         prometheus-node-exporter:
           enabled: true
         kube-state-metrics:
           enabled: true
         prometheusOperator:
           enabled: true
-
         prometheus:
           enabled: true
           agentMode: true
           prometheusSpec:
             remoteWrite:
               - url: "http://prometheus.monitoring.local:9090/api/v1/write"
-                # 🌟 데이터 전송 시 모든 메트릭에 'cluster: edge-1' 라벨을 추가
                 writeRelabelConfigs:
                 - targetLabel: cluster
                   replacement: edge-1
   destination:
-    server: '{{ .Values.global.edgeApiUrl }}'
+    # server 대신 name 사용
+    name: '{{ .Values.global.edgeClusterName }}'
     namespace: monitoring
   syncPolicy:
     automated: { prune: true, selfHeal: true }

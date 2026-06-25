@@ -10,7 +10,6 @@ spec:
     - "missingkey=error"
   generators:
     - clusters:
-        # edge=true 라벨이 붙은 클러스터만 타겟팅
         selector:
           matchLabels:
             edge: "true"
@@ -29,10 +28,11 @@ spec:
               value: 'http://10.0.4.10:8080'
             - name: global.edgeApiUrl
               value: '{{.server}}'
+            - name: global.edgeClusterName   # destination.name용으로 추가
+              value: '{{.name}}'
             - name: global.hubPrometheusUrl
               value: 'http://prometheus.monitoring.local/api/v1/write'
       destination:
-        # bootstrap 앱 자체는 항상 허브(in-cluster)에 생성
         server: 'https://kubernetes.default.svc'
         namespace: argocd
       syncPolicy:
@@ -41,4 +41,3 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
-
