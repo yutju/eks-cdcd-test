@@ -39,7 +39,7 @@ spec:
               value: "infra"
               effect: "NoSchedule"
           # GF_SECURITY_ADMIN_PASSWORD 중복 방지: adminPassword로 직접 지정
-          adminPassword: "admin"
+          adminPassword: "army6"
 
         alertmanager:
           enabled: true

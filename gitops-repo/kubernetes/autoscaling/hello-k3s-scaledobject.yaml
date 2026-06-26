@@ -1,0 +1,27 @@
+# kubernetes/autoscaling/hello-k3s-scaledobject.yaml
+# KEDA ScaledObject: hello-k3s 웹 서비스 파드 스케일링
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: hello-k3s-scaledobject
+  namespace: dev-apps
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hello-k3s
+  minReplicaCount: 2    # 최소 파드 수 (2개로 고가용성 보장)
+  maxReplicaCount: 10   # 최대 파드 수
+  cooldownPeriod: 60    # 스케일 다운 대기 시간(초)
+  triggers:
+    # CPU 기반 스케일링: 평균 CPU 사용률 60% 초과 시 파드 증가
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "60"
+    # 메모리 기반 스케일링: 평균 메모리 사용률 70% 초과 시 파드 증가
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "70"
+

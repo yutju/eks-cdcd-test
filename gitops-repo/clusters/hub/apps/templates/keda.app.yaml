@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keda
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'https://kedacore.github.io/charts'
+    chart: keda
+    targetRevision: 2.14.2
+    helm:
+      values: |
+        # KEDA 오퍼레이터는 infra 노드에 배치
+        nodeSelector:
+          role: infra
+        tolerations:
+          - key: "dedicated"
+            operator: "Equal"
+            value: "infra"
+            effect: "NoSchedule"
+        metricsServer:
+          nodeSelector:
+            role: infra
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "infra"
+              effect: "NoSchedule"
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: keda
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
