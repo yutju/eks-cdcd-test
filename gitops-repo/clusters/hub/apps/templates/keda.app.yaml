@@ -7,35 +7,50 @@ metadata:
     - resources-finalizer.argoproj.io
 spec:
   project: default
+
   source:
-    repoURL: 'https://kedacore.github.io/charts'
+    repoURL: https://kedacore.github.io/charts
     chart: keda
     targetRevision: 2.16.0
     helm:
       values: |
-        # KEDA 오퍼레이터는 infra 노드에 배치
+        crds:
+          install: true
+
         nodeSelector:
           role: infra
+
         tolerations:
-          - key: "dedicated"
-            operator: "Equal"
-            value: "infra"
-            effect: "NoSchedule"
+          - key: dedicated
+            operator: Equal
+            value: infra
+            effect: NoSchedule
+
         metricsServer:
           nodeSelector:
             role: infra
           tolerations:
-            - key: "dedicated"
-              operator: "Equal"
-              value: "infra"
-              effect: "NoSchedule"
+            - key: dedicated
+              operator: Equal
+              value: infra
+              effect: NoSchedule
+
   destination:
-    server: 'https://kubernetes.default.svc'
+    server: https://kubernetes.default.svc
     namespace: keda
+
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
     syncOptions:
       - CreateNamespace=true
-
+      - ServerSideApply=true
