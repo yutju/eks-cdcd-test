@@ -8,9 +8,26 @@ spec:
   source:
     repoURL: 'https://prometheus-community.github.io/helm-charts'
     chart: kube-prometheus-stack
-    targetRevision: 56.6.2
+    targetRevision: 87.2.1
     helm:
       values: |
+        grafana:
+          enabled: true
+          defaultDashboardsEnabled: true
+          securityContext:
+            runAsUser: 472
+            runAsGroup: 472
+            fsGroup: 472
+          persistence:
+            enabled: false
+          nodeSelector:
+            role: infra
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "infra"
+              effect: "NoSchedule"
+          adminPassword: "army6"
         prometheus:
           enabled: true
           prometheusSpec:
@@ -28,19 +45,6 @@ spec:
               service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
               service.beta.kubernetes.io/aws-load-balancer-internal: "true"
               external-dns.alpha.kubernetes.io/hostname: "prometheus.monitoring.local"
-
-        grafana:
-          enabled: true
-          nodeSelector:
-            role: infra
-          tolerations:
-            - key: "dedicated"
-              operator: "Equal"
-              value: "infra"
-              effect: "NoSchedule"
-          # GF_SECURITY_ADMIN_PASSWORD 중복 방지: adminPassword로 직접 지정
-          adminPassword: "army6"
-
         alertmanager:
           enabled: true
           nodeSelector:
@@ -50,7 +54,6 @@ spec:
               operator: "Equal"
               value: "infra"
               effect: "NoSchedule"
-
         kube-state-metrics:
           enabled: true
           nodeSelector:
@@ -60,7 +63,6 @@ spec:
               operator: "Equal"
               value: "infra"
               effect: "NoSchedule"
-
         prometheus-node-exporter:
           enabled: true
           affinity:
@@ -72,7 +74,6 @@ spec:
                     operator: NotIn
                     values:
                     - fargate
-
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: monitoring
@@ -82,6 +83,7 @@ spec:
       selfHeal: true
     syncOptions:
     - ServerSideApply=true
+    - CreateNamespace=true
     retry:
       limit: 5
       backoff:

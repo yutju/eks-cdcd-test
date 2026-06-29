@@ -48,7 +48,7 @@ spec:
                 container('kubectl') {
                     sh '''
                         apk add --no-cache curl openssl bash git aws-cli
-                        curl -sLO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
+                        curl -sLO "https://dl.k8s.io/release/v1.35.0/bin/linux/amd64/kubectl"
                         chmod +x kubectl
                         mv kubectl /usr/local/bin/
                     '''

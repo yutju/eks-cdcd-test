@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: 'https://kedacore.github.io/charts'
     chart: keda
-    targetRevision: 2.14.2
+    targetRevision: 2.16.0
     helm:
       values: |
         # KEDA 오퍼레이터는 infra 노드에 배치

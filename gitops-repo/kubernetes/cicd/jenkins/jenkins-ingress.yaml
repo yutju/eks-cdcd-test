@@ -3,8 +3,8 @@ kind: Ingress
 metadata:
   name: jenkins-ingress
   namespace: jenkins
-  annotations:
-    kubernetes.io/ingress.class: traefik  # K3s 기본 컨트롤러인 Traefik 사용
+  spec:
+    ingressClassName: traefik  # K3s 기본 컨트롤러인 Traefik 사용
 spec:
   rules:
   - host: jenkins.local                   # 우리가 사용할 가짜 도메인

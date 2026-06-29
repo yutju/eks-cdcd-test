@@ -9,7 +9,7 @@ spec:
   source:
     repoURL: 'https://kubernetes-sigs.github.io/metrics-server/'
     chart: metrics-server
-    targetRevision: 3.12.1 # 최신 버전 확인 필요
+    targetRevision: 3.12.2 # 최신 버전 확인 필요
     helm:
       values: |
         # 🌟 인프라 노드 배치 전략 준수
