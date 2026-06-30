@@ -13,24 +13,14 @@ spec:
       values: |
         grafana:
           enabled: false
-        # --- Alertmanager 설정 추가 및 활성화 ---
         alertmanager:
           enabled: true
-          image:
-            registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
-            repository: vdi/pod-image
-            tag: alertmanager-v0.33.0
           alertmanagerSpec:
             image:
               registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
               repository: vdi/pod-image
               tag: alertmanager-v0.33.0
-            configReloader:
-              image:
-                registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
-                repository: vdi/pod-image
-                tag: prometheus-config-reloader-v0.92.0
-        # ------------------------------------
+        
         prometheus-node-exporter:
           enabled: true
           version: "1.8.2"
@@ -38,27 +28,27 @@ spec:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
             repository: vdi/pod-image
             tag: node-exporter-v1.8.2
+            
         kube-state-metrics:
           enabled: true
           image:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
             repository: vdi/pod-image
             tag: kube-state-metrics-v2.13.0
+            
         prometheusOperator:
           enabled: true
+          # --- 이 두 줄이 추가되었습니다 (인증서 Job 실행 방지) ---
           tls:
             enabled: false
           admissionWebhooks:
             enabled: false
+          # -----------------------------------------------------
           image:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
             repository: vdi/pod-image
             tag: prometheus-operator-v0.79.2
-          prometheusConfigReloader:
-            image:
-              registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
-              repository: vdi/pod-image
-              tag: prometheus-config-reloader-v0.79.2
+            
         prometheus:
           enabled: true
           agentMode: true
@@ -77,6 +67,3 @@ spec:
     namespace: monitoring
   syncPolicy:
     automated: { prune: true, selfHeal: true }
-    syncOptions:
-      - ServerSideApply=true
-      - CreateNamespace=true
