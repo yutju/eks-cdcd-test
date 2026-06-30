@@ -17,14 +17,35 @@ spec:
           enabled: false
         prometheus-node-exporter:
           enabled: true
+          image:
+            registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+            repository: vdi/pod-image
+            tag: node-exporter-v1.8.2
         kube-state-metrics:
           enabled: true
+          image:
+            registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+            repository: vdi/pod-image
+            tag: kube-state-metrics-v2.13.0
         prometheusOperator:
           enabled: true
+          image:
+            registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+            repository: vdi/pod-image
+            tag: prometheus-operator-v0.79.2
+          prometheusConfigReloader:
+            image:
+              registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+              repository: vdi/pod-image
+              tag: prometheus-config-reloader-v0.79.2
         prometheus:
           enabled: true
           agentMode: true
           prometheusSpec:
+            image:
+              registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+              repository: vdi/pod-image
+              tag: prometheus-v3.1.0
             remoteWrite:
               - url: "http://prometheus.monitoring.local:9090/api/v1/write"
                 writeRelabelConfigs:

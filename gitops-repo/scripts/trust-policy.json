@@ -3,11 +3,11 @@
   "Statement": [
     {
       "Effect": "Allow",
-      "Principal": { "Federated": "arn:aws:iam::278584440977:oidc-provider/oidc.eks.ap-northeast-2.amazonaws.com/id/F226C034B485FE1DDB0733A86B152094" },
+      "Principal": { "Federated": "arn:aws:iam::278584440977:oidc-provider/oidc.eks.ap-northeast-2.amazonaws.com/id/219F58D04983E3A389FB354F8C78B7FB" },
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": {
-          "oidc.eks.ap-northeast-2.amazonaws.com/id/F226C034B485FE1DDB0733A86B152094:sub": "system:serviceaccount:monitoring:external-dns"
+          "oidc.eks.ap-northeast-2.amazonaws.com/id/219F58D04983E3A389FB354F8C78B7FB:sub": "system:serviceaccount:monitoring:external-dns"
         }
       }
     }

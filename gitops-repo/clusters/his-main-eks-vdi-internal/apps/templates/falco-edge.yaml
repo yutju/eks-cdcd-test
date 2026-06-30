@@ -11,6 +11,27 @@ spec:
     targetRevision: 7.0.0
     helm:
       values: |
+        image:
+          registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+          repository: vdi/pod-image
+          tag: falco-0.42.0
+        driver:
+          loader:
+            initContainer:
+              image:
+                registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+                repository: vdi/pod-image
+                tag: falco-driver-loader-0.42.0
+        falcoctl:
+          image:
+            registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+            repository: vdi/pod-image
+            tag: falcoctl-0.11.4
+          artifact:
+            install:
+              enabled: false
+            follow:
+              enabled: false
         falco:
           jsonOutput: true
           jsonIncludeOutputProperty: true
@@ -35,6 +56,10 @@ spec:
             privileged: true
         falcosidekick:
           enabled: true
+          image:
+            registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+            repository: vdi/pod-image
+            tag: falcosidekick-2.31.0
           webui:
             enabled: false
           config:
