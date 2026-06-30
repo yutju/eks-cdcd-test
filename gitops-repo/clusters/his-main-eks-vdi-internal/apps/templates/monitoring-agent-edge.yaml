@@ -13,29 +13,33 @@ spec:
       values: |
         grafana:
           enabled: false
+
         alertmanager:
           enabled: true
           alertmanagerSpec:
+            # 🌟 semver 파싱용 (커스텀 태그 prefix 때문에 image.tag를 그대로 버전으로 못 씀)
+            version: "0.33.0"
             image:
               registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
               repository: vdi/pod-image
               tag: alertmanager-v0.33.0
-        
+
         prometheus-node-exporter:
           enabled: true
+          # 🌟 semverCompare 내부 로직용 (ECR 커스텀 태그는 semver 형식이 아니라서 별도로 필요)
           version: "1.8.2"
           image:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
             repository: vdi/pod-image
             tag: node-exporter-v1.8.2
-            
+
         kube-state-metrics:
           enabled: true
           image:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
             repository: vdi/pod-image
             tag: kube-state-metrics-v2.13.0
-            
+
         prometheusOperator:
           enabled: true
           # --- 이 두 줄이 추가되었습니다 (인증서 Job 실행 방지) ---
@@ -48,11 +52,20 @@ spec:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
             repository: vdi/pod-image
             tag: prometheus-operator-v0.79.2
-            
+          # 🌟 추가: Prometheus/Alertmanager 파드에 사이드카로 주입되는
+          # config-reloader 이미지도 private ECR로 지정 (air-gapped 환경 대응)
+          prometheusConfigReloader:
+            image:
+              registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+              repository: vdi/pod-image
+              tag: prometheus-config-reloader-v0.79.2  # 👈 실제 ECR에 푸시된 태그로 맞춰주세요
+
         prometheus:
           enabled: true
           agentMode: true
           prometheusSpec:
+            # 🌟 semver 파싱용 (커스텀 태그 prefix 때문에 image.tag를 그대로 버전으로 못 씀)
+            version: "3.1.0"
             image:
               registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
               repository: vdi/pod-image
@@ -67,3 +80,7 @@ spec:
     namespace: monitoring
   syncPolicy:
     automated: { prune: true, selfHeal: true }
+    # 🌟 추가: 네임스페이스 자동 생성 + 대용량 CRD ServerSideApply
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
