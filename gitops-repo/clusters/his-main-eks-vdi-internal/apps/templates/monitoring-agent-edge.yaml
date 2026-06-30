@@ -13,10 +13,27 @@ spec:
       values: |
         grafana:
           enabled: false
+        # --- Alertmanager 설정 추가 및 활성화 ---
         alertmanager:
-          enabled: false
+          enabled: true
+          image:
+            registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+            repository: vdi/pod-image
+            tag: alertmanager-v0.33.0
+          alertmanagerSpec:
+            image:
+              registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+              repository: vdi/pod-image
+              tag: alertmanager-v0.33.0
+            configReloader:
+              image:
+                registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
+                repository: vdi/pod-image
+                tag: prometheus-config-reloader-v0.92.0
+        # ------------------------------------
         prometheus-node-exporter:
           enabled: true
+          version: "1.8.2"
           image:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
             repository: vdi/pod-image
@@ -29,6 +46,10 @@ spec:
             tag: kube-state-metrics-v2.13.0
         prometheusOperator:
           enabled: true
+          tls:
+            enabled: false
+          admissionWebhooks:
+            enabled: false
           image:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
             repository: vdi/pod-image

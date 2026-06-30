@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-load-test-script
+  namespace: dev-apps
+data:
+  test.js: |
+    import http from 'k6/http';
+    import { sleep } from 'k6';
+
+    export const options = {
+      stages: [
+        { duration: '1m', target: 50 },   // 1분간 50 VU까지 증가
+        { duration: '3m', target: 50 },   // 3분간 50 VU 유지
+        { duration: '1m', target: 0 },    // 1분간 0으로 감소
+      ],
+    };
+
+    export default function () {
+      http.get('http://hello-k3s.dev-apps.svc.cluster.local');
+      sleep(0.1);
+    }

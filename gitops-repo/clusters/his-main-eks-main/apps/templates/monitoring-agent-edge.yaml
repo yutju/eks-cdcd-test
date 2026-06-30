@@ -14,7 +14,7 @@ spec:
         grafana:
           enabled: false
         alertmanager:
-          enabled: false
+          enabled: true
         prometheus-node-exporter:
           enabled: true
         kube-state-metrics:
