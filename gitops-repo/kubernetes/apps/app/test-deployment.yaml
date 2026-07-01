@@ -1,27 +1,36 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hello-k3s            # 배포 이름
-  namespace: dev-apps         # 배포될 공간
+  name: hello-k3s
+  namespace: dev-apps
 spec:
-  replicas: 3                # 파드(Pod) 개수 3개 유지 (고가용성)
+  replicas: 3
   selector:
     matchLabels:
-      app: hello-k3s         # 이 라벨을 가진 파드들을 관리함
+      app: hello-k3s
   template:
     metadata:
       labels:
-        app: hello-k3s       # 생성될 파드에 붙을 라벨 (서비스와 연결되는 고리)
+        app: hello-k3s
     spec:
       containers:
-      - name: nginx-container
-        image: nginx:stable-alpine # 가벼운 알파인 리눅스 기반 Nginx 이미지
+      - name: hpa-example
+        image: registry.k8s.io/hpa-example
         ports:
-        - containerPort: 80  # 컨테이너가 내부적으로 사용하는 포트
+        - containerPort: 80
         resources:
           requests:
-            cpu: "100m"
-            memory: "64Mi"
-          limits:
             cpu: "200m"
-            memory: "128Mi"
+            memory: "50Mi"
+          limits:
+            cpu: "500m"
+            memory: "100Mi"
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 3
+          periodSeconds: 10
+          failureThreshold: 5
+          timeoutSeconds: 3  
+
