@@ -16,6 +16,9 @@ spec:
       containers:
         - name: openemr
           image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/openemr:latest
+          envFrom:
+            - secretRef:
+                name: openemr-db-secret
           ports:
             - containerPort: 80
           volumeMounts:
