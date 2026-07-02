@@ -8,12 +8,12 @@ data:
     <?php
     global $disable_utf8_flag;
     $disable_utf8_flag = false;
-    $host   = '192.168.100.50';
-    $port   = '3306';
-    $login  = 'emr_user';
-    $pass   = 'qwer1234';
-    $dbase  = 'openemr_db';
-    $db_encoding = 'utf8mb4';
+    $host   = getenv('SQL_HOST');
+    $port   = getenv('SQL_PORT');
+    $login  = getenv('SQL_LOGIN');
+    $pass   = getenv('SQL_PASS');
+    $dbase  = getenv('SQL_DBASE');
+    $db_encoding = getenv('SQL_ENCODING');
     $sqlconf = [];
     global $sqlconf;
     $sqlconf['host']      = $host;

@@ -112,7 +112,7 @@ spec:
                         }
                       }
                   - script: >
-                      pipelineJob('jenkins-vdi-pipeline') {
+                      pipelineJob('jenkins-openemr-pipeline') {
                         definition {
                           cpsScm {
                             scm {
@@ -124,7 +124,7 @@ spec:
                                 branches('*/main')
                               }
                             }
-                            scriptPath('vdi-service/Jenkinsfile')
+                            scriptPath('openemr/Jenkinsfile')
                           }
                         }
                       }
