@@ -1,0 +1,25 @@
+
+# gitops-repo/clusters/his-main-eks-vdi-internal/apps/templates/vdi-service-edge.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edge-vdi-internal-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: '{{ .Values.global.gitlabUrl }}/root/gitops-repo.git'
+    path: kubernetes/apps/vdi-service
+    targetRevision: main
+  destination:
+    server: '{{ .Values.global.edgeApiUrl }}'   # ApplicationSet이 자동으로 VDI 클러스터 주소 주입
+    namespace: vdi-apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ignoreDifferences=[{"group":"apps","kind":"Deployment","jsonPointers":["/spec/replicas"]}]
+~
+

@@ -95,7 +95,7 @@ spec:
                               password: "${GITLAB_TOKEN_ENV}"
                 jobs:
                   - script: >
-                      pipelineJob('jenkins-test-pipeline') {
+                      pipelineJob('jenkins-app-service-pipeline') {
                         definition {
                           cpsScm {
                             scm {
@@ -107,7 +107,24 @@ spec:
                                 branches('*/main')
                               }
                             }
-                            scriptPath('Jenkinsfile')
+                            scriptPath('app-service/Jenkinsfile')
+                          }
+                        }
+                      }
+                  - script: >
+                      pipelineJob('jenkins-vdi-pipeline') {
+                        definition {
+                          cpsScm {
+                            scm {
+                              git {
+                                remote {
+                                  url("${CM_GITLAB_URL}/root/app-repo.git")
+                                  credentials('gitlab-checkout-cred')
+                                }
+                                branches('*/main')
+                              }
+                            }
+                            scriptPath('vdi-service/Jenkinsfile')
                           }
                         }
                       }

@@ -1,0 +1,141 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: jenkins-agent
+  namespace: jenkins-build
+spec:
+  serviceAccountName: jenkins-build-agent
+  containers:
+  - name: kubectl
+    image: alpine:latest
+    command: ["sleep"]
+    args: ["infinity"]
+    securityContext:
+      runAsUser: 0
+    envFrom:
+    - configMapRef:
+        name: jenkins-infra-config
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
+    command: ["sleep"]
+    args: ["infinity"]
+"""
+        }
+    }
+
+    environment {
+        GITLAB_API_TOKEN    = credentials('gitlab-token-id')
+        GITLAB_URL          = "${env.GITLAB_URL ?: 'http://10.0.4.10:8080'}"
+        GITLAB_PROJECT_ID   = "root%2Fapp-repo"
+        JENKINS_WEBHOOK_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/project/jenkins-hello-k3s-pipeline"
+        AWS_REGION          = "ap-northeast-2"
+        ECR_REPO_NAME       = "web-service/app-image"
+        IMAGE_TAG           = "${BUILD_NUMBER}"
+    }
+
+    triggers {
+        gitlab(triggerOnPush: true, triggerOnMergeRequest: true, branchFilterType: 'All', secretToken: 'jenkins-hello-k3s-secret')
+    }
+
+    stages {
+        stage('0. 기본 에이전트 도구 주입') {
+            steps {
+                container('kubectl') {
+                    sh '''
+                        apk add --no-cache curl openssl bash git aws-cli
+                        curl -sLO "https://dl.k8s.io/release/v1.35.0/bin/linux/amd64/kubectl"
+                        chmod +x kubectl
+                        mv kubectl /usr/local/bin/
+                    '''
+                }
+            }
+        }
+
+        stage('1. 코드 체크아웃') {
+            steps { checkout scm }
+        }
+
+        stage('1.5 변경 경로 확인') {
+            steps {
+                script {
+                    def changed = sh(script: "git diff --name-only HEAD~1 HEAD || true", returnStdout: true).trim()
+                    if (!changed.contains('app-service/')) {
+                        echo "app-service 변경 없음 — 빌드 스킵"
+                        currentBuild.result = 'NOT_BUILT'
+                        error("스킵")
+                    }
+                }
+            }
+        }
+
+        stage('2. GitLab 웹훅 자동 등록') {
+            steps {
+                container('kubectl') {
+                    script {
+                        def gitlabApiBase = "${env.GITLAB_URL}/api/v4"
+                        sh """
+                            EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_URL}" || true)
+                            if [ -z "\$EXISTING_HOOK" ]; then
+                                curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks?url=${env.JENKINS_WEBHOOK_URL}&push_events=true&token=jenkins-hello-k3s-secret&enable_ssl_verification=false"
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('3. Docker Image Build & ECR Push (Kaniko)') {
+            steps {
+                script {
+                    def awsAccountId = ""
+                    container('kubectl') {
+                        awsAccountId = sh(script: "aws sts get-caller-identity --query 'Account' --output text", returnStdout: true).trim()
+                    }
+                    container('kaniko') {
+                        def ecrRegistry = "${awsAccountId}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+                        def ecrImageUri = "${ecrRegistry}/${env.ECR_REPO_NAME}:${env.IMAGE_TAG}"
+                        sh """
+                            mkdir -p /kaniko/.docker
+                            echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
+                            /kaniko/executor \\
+                                --context \$(pwd)/app-service \\
+                                --dockerfile \$(pwd)/app-service/Dockerfile \\
+                                --destination ${ecrImageUri}
+                        """
+                        env.ECR_IMAGE_URI = ecrImageUri
+                    }
+                }
+            }
+        }
+
+        stage('4. GitOps 레포 자동 수정 및 푸시') {
+            steps {
+                container('kubectl') {
+                    script {
+                        withCredentials([usernamePassword(credentialsId: 'gitlab-checkout-cred', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                            sh """
+                                git config --global user.email "jenkins@jenkins.com"
+                                git config --global user.name "Jenkins-CI"
+                                git config --global http.sslVerify false
+                                rm -rf gitops-repo-tmp
+                                CLEAN_PASSWORD=\$(echo -n "\${GIT_PASSWORD}" | tr -d '\\n\\r')
+                                CLEAN_USERNAME=\$(echo -n "\${GIT_USERNAME}" | tr -d '\\n\\r')
+                                git clone -b main "http://\${CLEAN_USERNAME}:\${CLEAN_PASSWORD}@10.0.4.10:8080/root/gitops-repo.git" gitops-repo-tmp
+                                sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/app/test-deployment.yaml
+                                cd gitops-repo-tmp
+                                git add kubernetes/apps/app/test-deployment.yaml
+                                git commit -m "hello-k3s image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG})"
+                                git push origin main
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

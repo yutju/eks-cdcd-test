@@ -1,0 +1,14 @@
+# gitops-repo/kubernetes/apps/vdi-service/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: vdi-internal-service
+  namespace: vdi-apps
+spec:
+  type: ClusterIP        # VDI 내부에서만 접속 → 외부 노출 불필요
+  selector:
+    app: vdi-internal-service
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 6000
