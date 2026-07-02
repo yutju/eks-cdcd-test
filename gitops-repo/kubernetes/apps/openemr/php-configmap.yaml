@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openemr-php-config
+  namespace: his-emr
+data:
+  openemr-custom.ini: |
+    max_execution_time = 600
+    max_input_time = 600
+    memory_limit = 512M
+    post_max_size = 32M

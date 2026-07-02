@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openemr-sqlconf
+  namespace: his-emr
+data:
+  sqlconf.php: |
+    <?php
+    global $disable_utf8_flag;
+    $disable_utf8_flag = false;
+    $host   = '192.168.100.50';
+    $port   = '3306';
+    $login  = 'emr_user';
+    $pass   = 'qwer1234';
+    $dbase  = 'openemr_db';
+    $db_encoding = 'utf8mb4';
+    $sqlconf = [];
+    global $sqlconf;
+    $sqlconf['host']      = $host;
+    $sqlconf['port']      = $port;
+    $sqlconf['login']     = $login;
+    $sqlconf['pass']      = $pass;
+    $sqlconf['dbase']     = $dbase;
+    $sqlconf['db_encoding'] = $db_encoding;
+    $config = 1;
