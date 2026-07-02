@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-service-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: '{{ .Values.global.gitlabUrl }}/root/gitops-repo.git'
+    path: kubernetes/apps/app-service
+    targetRevision: main
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: web-apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ignoreDifferences=[{"group":"apps","kind":"Deployment","jsonPointers":["/spec/replicas"]}]
