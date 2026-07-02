@@ -22,3 +22,15 @@ for CLUSTER_NAME in "${CLUSTERS[@]}"; do
 done
 
 echo "Update process finished."
+echo "--------------------------------------------------"
+
+# kubeconfig 갱신 직후 ArgoCD 클러스터 등록/라벨링/refresh까지 자동 실행
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+REGISTER_SCRIPT="$SCRIPT_DIR/gitops-repo/scripts/register-edge.sh"
+
+if [ -f "$REGISTER_SCRIPT" ]; then
+    echo "🚀 ArgoCD 클러스터 재등록을 시작합니다..."
+    bash "$REGISTER_SCRIPT"
+else
+    echo "⚠️  경고: register-edge.sh를 찾을 수 없습니다 ($REGISTER_SCRIPT). 수동으로 실행해주세요."
+fi

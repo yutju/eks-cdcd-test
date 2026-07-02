@@ -32,14 +32,14 @@ spec:
         GITLAB_API_TOKEN    = credentials('gitlab-token-id')
         GITLAB_URL          = "${env.GITLAB_URL ?: 'http://10.0.4.10:8080'}"
         GITLAB_PROJECT_ID   = "root%2Fapp-repo"
-        JENKINS_WEBHOOK_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/project/jenkins-app-service-pipeline"
+        JENKINS_WEBHOOK_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/project/jenkins-vdi-service-pipeline"
         AWS_REGION          = "ap-northeast-2"
-        ECR_REPO_NAME       = "web-service/app-image"
+        ECR_REPO_NAME       = "vdi-service/app-image"
         IMAGE_TAG           = "${BUILD_NUMBER}"
     }
 
     triggers {
-        gitlab(triggerOnPush: true, triggerOnMergeRequest: true, branchFilterType: 'All', secretToken: 'jenkins-app-service-secret')
+        gitlab(triggerOnPush: true, triggerOnMergeRequest: true, branchFilterType: 'All', secretToken: 'jenkins-vdi-service-secret')
     }
 
     stages {
@@ -64,8 +64,8 @@ spec:
             steps {
                 script {
                     def changed = sh(script: "git diff --name-only HEAD~1 HEAD || true", returnStdout: true).trim()
-                    if (!changed.contains('app-service/')) {
-                        echo "app-service 변경 없음 — 빌드 스킵"
+                    if (!changed.contains('vdi-service/')) {
+                        echo "vdi-service 변경 없음 — 빌드 스킵"
                         currentBuild.result = 'NOT_BUILT'
                         error("스킵")
                     }
@@ -81,7 +81,7 @@ spec:
                         sh """
                             EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_URL}" || true)
                             if [ -z "\$EXISTING_HOOK" ]; then
-                                curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks?url=${env.JENKINS_WEBHOOK_URL}&push_events=true&token=jenkins-app-service-secret&enable_ssl_verification=false"
+                                curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks?url=${env.JENKINS_WEBHOOK_URL}&push_events=true&token=jenkins-vdi-service-secret&enable_ssl_verification=false"
                             fi
                         """
                     }
@@ -103,8 +103,8 @@ spec:
                             mkdir -p /kaniko/.docker
                             echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
                             /kaniko/executor \\
-                                --context \$(pwd)/app-service \\
-                                --dockerfile \$(pwd)/app-service/Dockerfile \\
+                                --context \$(pwd)/vdi-service \\
+                                --dockerfile \$(pwd)/vdi-service/Dockerfile \\
                                 --destination ${ecrImageUri}
                         """
                         env.ECR_IMAGE_URI = ecrImageUri
@@ -126,10 +126,10 @@ spec:
                                 CLEAN_PASSWORD=\$(echo -n "\${GIT_PASSWORD}" | tr -d '\\n\\r')
                                 CLEAN_USERNAME=\$(echo -n "\${GIT_USERNAME}" | tr -d '\\n\\r')
                                 git clone -b main "http://\${CLEAN_USERNAME}:\${CLEAN_PASSWORD}@10.0.4.10:8080/root/gitops-repo.git" gitops-repo-tmp
-                                sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/app/test-deployment.yaml
+                                sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/vdi-service/deployment.yaml
                                 cd gitops-repo-tmp
-                                git add kubernetes/apps/app/test-deployment.yaml
-                                git commit -m "app-service image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG})"
+                                git add kubernetes/apps/vdi-service/deployment.yaml
+                                git commit -m "vdi-service image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG})"
                                 git push origin main
                             """
                         }
