@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: falco-kafka-consumer
+  namespace: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: falco-kafka-consumer
+  template:
+    metadata:
+      labels:
+        app: falco-kafka-consumer
+    spec:
+      containers:
+      - name: consumer
+        image: python:3.11-slim
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          pip install kafka-python mysql-connector-python -q
+
+          python3 << 'PYEOF'
+          import json
+          import time
+          from datetime import datetime
+
+          from kafka import KafkaConsumer
+          import mysql.connector
+
+          while True:
+              try:
+                  consumer = KafkaConsumer(
+                      'falco-main',
+                      'falco-vdi',
+                      'falco-devops',
+                      bootstrap_servers=[
+                          'my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093'
+                      ],
+                      value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+                      auto_offset_reset='earliest',
+                      group_id='falco-mysql-consumer'
+                  )
+
+                  db = mysql.connector.connect(
+                      host='mysql-service',
+                      user='root',
+                      password='{{ .Values.mysql.rootPassword }}',
+                      database='{{ .Values.mysql.databaseName }}'
+                  )
+
+                  cursor = db.cursor()
+
+                  print("Connected! Consuming falco-main, falco-vdi, falco-devops...", flush=True)
+
+                  for msg in consumer:
+                      event = msg.value
+                      cluster_name = msg.topic.replace("falco-", "")
+
+                      # Kafka에서 받은 원본 JSON 전체 출력
+                      print(json.dumps(event, indent=2), flush=True)
+
+                      event_time = None
+                      if event.get("time"):
+                          try:
+                              event_time = datetime.fromisoformat(
+                                  event["time"].replace("Z", "+00:00")
+                              )
+                          except Exception:
+                              pass
+
+                      cursor.execute("""
+                          INSERT INTO falco_events
+                          (
+                              cluster_name,
+                              uuid,
+                              priority,
+                              rule_name,
+                              output,
+                              source,
+                              hostname,
+                              tags,
+                              event_time,
+                              raw_event
+                          )
+                          VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                      """, (
+                          cluster_name,
+                          event.get("uuid", ""),
+                          event.get("priority", ""),
+                          event.get("rule", ""),
+                          event.get("output", ""),
+                          event.get("source", ""),
+                          event.get("hostname", ""),
+                          json.dumps(event.get("tags", [])),
+                          event_time,
+                          json.dumps(event)
+                      ))
+
+                      db.commit()
+
+                      print(
+                          f"Inserted: {event.get('rule','')} ({event.get('priority','')})",
+                          flush=True
+                      )
+
+              except Exception as e:
+                  print(f"Error: {e}", flush=True)
+                  time.sleep(5)
+
+          PYEOF

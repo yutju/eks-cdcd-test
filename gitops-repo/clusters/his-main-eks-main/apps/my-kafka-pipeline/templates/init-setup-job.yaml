@@ -1,0 +1,96 @@
+# init-setup-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-init-setup
+  namespace: kafka
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: setup-script
+        image: debian:bullseye-slim
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          apt-get update && apt-get install -y default-mysql-client curl
+          
+          echo "⏳ MySQL이 켜질 때까지 기다리는 중..."
+          until mysql -h mysql-service -u root -p"{{ .Values.mysql.rootPassword }}" -e "SELECT 1" > /dev/null 2>&1; do
+            sleep 5
+            echo "대기 중..."
+          done
+          
+          echo "✅ MySQL 준비 완료! 분리된 SQL 스크립트들을 순차적으로 실행합니다."
+          for file in /sql-scripts/*.sql; do
+            echo " 실행 중: $file"
+            mysql -h mysql-service -u root -p"{{ .Values.mysql.rootPassword }}" {{ .Values.mysql.databaseName }} < "$file"
+          done
+          
+          echo "⏳ 카프카 커넥터 서버가 켜질 때까지 기다리는 중..."
+          until curl -s http://kafka-connect-service:8083/connectors > /dev/null 2>&1; do
+            sleep 5
+            echo "대기 중..."
+          done
+          
+          echo "✅ IAM Audit 로그 Sink 일꾼을 투입합니다."
+          curl -X POST -H "Content-Type: application/json" --data '{
+            "name": "iam-audit-sink-connector",
+            "config": {
+              "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+              "tasks.max": "1",
+              "topics": "iam-audit-logs",
+              "connection.url": "jdbc:mysql://mysql-service:3306/{{ .Values.mysql.databaseName }}?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul",
+              "db.timezone": "Asia/Seoul",
+              "connection.user": "root",
+              "connection.password": "{{ .Values.mysql.rootPassword }}",
+              "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+              "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+              "value.converter.schemas.enable": "true",
+              "transforms": "convertTimestamp",
+              "transforms.convertTimestamp.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
+              "transforms.convertTimestamp.field": "timestamp",
+              "transforms.convertTimestamp.target.type": "Timestamp",
+              "transforms.convertTimestamp.format": "yyyy-MM-dd'\''T'\''HH:mm:ssX",
+              "insert.mode": "upsert",
+              "pk.mode": "record_value",
+              "pk.fields": "event_id",
+              "table.name.format": "iam_audit_logs",
+              "auto.create": "false",
+              "auto.evolve": "true"
+            }
+          }' http://kafka-connect-service:8083/connectors
+
+          echo "✅ VPC Flow Logs Sink 일꾼을 추가로 투입합니다."
+          curl -X POST -H "Content-Type: application/json" --data '{
+            "name": "vpc-flow-logs-sink-connector",
+            "config": {
+              "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+              "tasks.max": "1",
+              "topics": "vpc-flow-logs",
+              "connection.url": "jdbc:mysql://mysql-service:3306/{{ .Values.mysql.databaseName }}?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul",
+              "db.timezone": "Asia/Seoul",
+              "connection.user": "root",
+              "connection.password": "{{ .Values.mysql.rootPassword }}",
+              "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+              "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+              "value.converter.schemas.enable": "true",
+              "insert.mode": "insert",
+              "table.name.format": "vpc_flow_logs",
+              "auto.create": "false",
+              "auto.evolve": "true"
+            }
+          }' http://kafka-connect-service:8083/connectors
+
+        volumeMounts:
+        - name: sql-scripts-volume
+          mountPath: /sql-scripts
+      
+      volumes:
+      - name: sql-scripts-volume
+        configMap:
+          name: {{ .Release.Name }}-sql-scripts

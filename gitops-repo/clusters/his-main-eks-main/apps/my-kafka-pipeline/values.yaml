@@ -1,0 +1,24 @@
+# my-kafka-pipeline/values.yaml
+kafka:
+  replicas: 3
+  storageSize: "10Gi"
+  bootstrapServers: "my-cluster-kafka-bootstrap:9093" 
+
+  volumes:
+    - index: "0"
+      volumeHandle: "" # 기존 볼륨 연결
+    - index: "1"
+      volumeHandle: "" # 기존 볼륨 연결
+    - index: "2"
+      volumeHandle: "" # 기존 볼륨 연결
+
+
+mysql:
+  storageSize: "10Gi"
+  storage: "10Gi"
+  rootPassword: "1234"
+  databaseName: "testdb"
+
+  # MySQL 볼륨 설정
+  volumeHandle: "" # 기존 볼륨 연결
+

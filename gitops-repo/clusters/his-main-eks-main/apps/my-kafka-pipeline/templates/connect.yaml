@@ -1,0 +1,90 @@
+# connect.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect
+  namespace: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-connect
+  template:
+    metadata:
+      labels:
+        app: kafka-connect
+    spec:
+      initContainers:
+      - name: install-plugins
+        image: confluentinc/cp-kafka-connect-base:7.4.0
+        securityContext:
+          runAsUser: 0
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          echo "1. JDBC 플러그인 공식 다운로드 중..."
+          confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:10.7.4 --component-dir /plugins
+          
+          echo "2. MySQL 통신 드라이버 다운로드 중..."
+          curl -L -o /plugins/confluentinc-kafka-connect-jdbc/lib/mysql-connector-j-8.0.33.jar https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/8.0.33/mysql-connector-j-8.0.33.jar
+          
+          echo "3. 권한 설정 (일꾼이 읽을 수 있게 변경)"
+          chown -R 1000:1000 /plugins
+        volumeMounts:
+        - name: plugins-volume
+          mountPath: /plugins
+      containers:
+      - name: kafka-connect
+        image: confluentinc/cp-kafka-connect-base:7.4.0
+        env:
+        - name: CONNECT_BOOTSTRAP_SERVERS
+          #value: "my-cluster-kafka-bootstrap:9092"
+          value: {{ .Values.kafka.bootstrapServers | quote }}
+        - name: CONNECT_GROUP_ID
+          value: "connect-cluster"
+        - name: CONNECT_CONFIG_STORAGE_TOPIC
+          value: "connect-configs"
+        - name: CONNECT_OFFSET_STORAGE_TOPIC
+          value: "connect-offsets"
+        - name: CONNECT_STATUS_STORAGE_TOPIC
+          value: "connect-status"
+        - name: CONNECT_KEY_CONVERTER
+          value: "org.apache.kafka.connect.json.JsonConverter"
+        - name: CONNECT_VALUE_CONVERTER
+          value: "org.apache.kafka.connect.json.JsonConverter"
+        - name: CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE
+          value: "false"
+        - name: CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE
+          value: "true"
+        - name: CONNECT_REST_ADVERTISED_HOST_NAME
+          value: "kafka-connect"
+        - name: CONNECT_PLUGIN_PATH
+          value: "/usr/share/java,/plugins"
+        volumeMounts:
+        - name: plugins-volume
+          mountPath: /plugins
+        
+        readinessProbe:
+          httpGet:
+            path: /connectors
+            port: 8083
+          initialDelaySeconds: 15
+          periodSeconds: 10     
+          timeoutSeconds: 5
+          failureThreshold: 6
+          
+      volumes:
+      - name: plugins-volume
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-connect-service
+  namespace: kafka
+spec:
+  ports:
+    - port: 8083
+      targetPort: 8083
+  selector:
+    app: kafka-connect

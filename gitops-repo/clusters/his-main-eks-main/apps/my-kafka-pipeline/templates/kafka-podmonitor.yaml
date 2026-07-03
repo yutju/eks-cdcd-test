@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-metrics
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  labels:
+    release: monitoring-stack
+    release: edge-1-monitoring-agent
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/kind: Kafka
+  namespaceSelector:
+    matchNames:
+      - kafka
+  podMetricsEndpoints:
+  - path: /metrics
+    port: tcp-prometheus
+    interval: 15s

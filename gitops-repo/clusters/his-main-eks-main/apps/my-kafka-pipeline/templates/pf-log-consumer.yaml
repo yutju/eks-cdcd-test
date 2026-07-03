@@ -1,0 +1,87 @@
+#pf-log-consumer.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pf-log-consumer
+  namespace: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pf-log-consumer
+  template:
+    metadata:
+      labels:
+        app: pf-log-consumer
+    spec:
+      containers:
+      - name: consumer
+        image: python:3.11-slim
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          apt-get update -q && apt-get install -y -q libsnappy-dev gcc
+          pip install kafka-python mysql-connector-python python-snappy -q
+          python3 << 'PYEOF'
+          import json
+          import re
+          from kafka import KafkaConsumer
+          import mysql.connector
+          import time
+
+          def fix_json(raw):
+            # message 필드 값에 따옴표 추가
+            fixed = re.sub(
+              r'"message":\s*([^"][^,}\n]*)',
+              lambda m: '"message": "' + m.group(1).strip().replace('"', '\\"') + '"',
+              raw
+            )
+            return fixed
+
+          while True:
+            try:
+              consumer = KafkaConsumer(
+                'pf-log',
+                bootstrap_servers=['my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093'],
+                auto_offset_reset='earliest',
+                group_id='pf-log-mysql-consumer'
+              )
+              db = mysql.connector.connect(
+                host='mysql-service',
+                user='root',
+                password='{{ .Values.mysql.rootPassword }}',
+                database='{{ .Values.mysql.databaseName }}'
+              )
+              cursor = db.cursor()
+              print("Connected! Consuming pf-log...", flush=True)
+              for msg in consumer:
+                try:
+                  raw = msg.value.decode('utf-8')
+
+                  print("===== RAW KAFKA MESSAGE =====", flush=True)
+                  print(raw, flush=True)
+                  print("=============================", flush=True)
+
+                  try:
+                    event = json.loads(raw)
+                  except:
+                    event = json.loads(fix_json(raw))
+                  cursor.execute("""
+                    INSERT INTO pf_log
+                    (timestamp, host, program, pid, message)
+                    VALUES (%s, %s, %s, %s, %s)
+                  """, (
+                    event.get('timestamp', ''),
+                    event.get('host', ''),
+                    event.get('program', ''),
+                    event.get('pid', ''),
+                    event.get('message', '')
+                  ))
+                  db.commit()
+                  print(f"Inserted: {event.get('program', '')}", flush=True)
+                except Exception as e:
+                  print(f"Skip: {e}", flush=True)
+            except Exception as e:
+              print(f"Error: {e}", flush=True)
+              time.sleep(5)
+          PYEOF

@@ -1,0 +1,8 @@
+# init-scripts-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-sql-scripts
+  namespace: kafka
+data:
+{{- (.Files.Glob "sql-scripts/*.sql").AsConfig | nindent 2 }}

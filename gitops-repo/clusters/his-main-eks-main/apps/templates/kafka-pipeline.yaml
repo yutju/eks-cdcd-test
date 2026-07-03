@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kafka-pipeline
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: http://10.0.4.10:8080/root/gitops-repo.git
+    targetRevision: HEAD
+    path: clusters/his-main-eks-main/apps/my-kafka-pipeline
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: '{{ .Values.global.edgeApiUrl }}'
+    namespace: kafka
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
