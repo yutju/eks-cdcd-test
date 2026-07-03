@@ -40,6 +40,9 @@ spec:
           config:
             prometheus:
               enabled: true
+            kafka:
+              hostport: "my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093"
+              topic: "falco-main"
           serviceMonitor:
             enabled: true
   destination:

@@ -39,11 +39,13 @@ spec:
           config:
             prometheus:
               enabled: true
+            kafka:
+              hostport: "a587fce1a18e44dddb5113906ef93591-dbe568beb162965a.elb.ap-northeast-2.amazonaws.com:9092"
+              topic: "falco-devops"
           serviceMonitor:
             enabled: true
           webui:
             enabled: true
-            # Redis 영구 저장소 비활성화 (정확한 위치)
             redis:
               storageEnabled: false
             service:
