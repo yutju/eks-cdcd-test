@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway-api-crd
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # 젠킨스 파일에 있던 네 GitLab 주소 반영
+    repoURL: 'http://10.0.4.10:8080/root/gitops-repo.git' 
+    targetRevision: main
+    # 방금 다운로드한 파일이 있는 경로
+    path: kubernetes/gateway-api
+  destination:
+    # Hub 클러스터 (자신) 에 배포
+    server: 'https://kubernetes.default.svc' 
+    namespace: default # CRD는 클러스터 레벨 리소스라 네임스페이스에 종속되진 않아
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # CRD 자체가 먼저 생성되도록 보장하는 옵션 (매우 중요!)
+      - CreateNamespace=true
+      - ServerSideApply=true

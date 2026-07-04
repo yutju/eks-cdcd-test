@@ -1,0 +1,7 @@
+# gitops-repo/kubernetes/gateway-api/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 로컬 파일 대신 외부의 공식 릴리즈 YAML URL을 직접 바라보게 설정
+resources:
+  - https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
