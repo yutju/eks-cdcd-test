@@ -35,11 +35,11 @@ spec:
         JENKINS_WEBHOOK_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/project/jenkins-app-service-pipeline"
         AWS_REGION          = "ap-northeast-2"
         ECR_REPO_NAME       = "web-service/app-image"
-        IMAGE_TAG           = "${BUILD_NUMBER}"
+        IMAGE_TAG           = "build-${BUILD_NUMBER}"
     }
 
     triggers {
-        gitlab(triggerOnPush: true, triggerOnMergeRequest: true, branchFilterType: 'All', secretToken: 'jenkins-app-service-secret')
+        gitlab(triggerOnPush: true, triggerOnMergeRequest: true, branchFilterType: 'NameBasedFilter', includeBranchesSpec: 'main', secretToken: 'jenkins-app-service-secret')
     }
 
     stages {
@@ -113,29 +113,79 @@ spec:
             }
         }
 
-        stage('4. GitOps 레포 자동 수정 및 푸시') {
+        stage('4. GitOps 테스트 환경 반영') {
             steps {
                 container('kubectl') {
                     script {
-                        withCredentials([usernamePassword(credentialsId: 'gitlab-checkout-cred', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
-                            sh """
-                                git config --global user.email "jenkins@jenkins.com"
-                                git config --global user.name "Jenkins-CI"
-                                git config --global http.sslVerify false
-                                rm -rf gitops-repo-tmp
-                                CLEAN_PASSWORD=\$(echo -n "\${GIT_PASSWORD}" | tr -d '\\n\\r')
-                                CLEAN_USERNAME=\$(echo -n "\${GIT_USERNAME}" | tr -d '\\n\\r')
-                                git clone -b main "http://\${CLEAN_USERNAME}:\${CLEAN_PASSWORD}@10.0.4.10:8080/root/gitops-repo.git" gitops-repo-tmp
-                                sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/app-service-test/deployment.yaml
-                                cd gitops-repo-tmp
-                                git add kubernetes/apps/app-service/deployment.yaml
-                                git commit -m "app-service image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG})"
-                                git push origin main
-                            """
-                        }
+                        deployToGitOps(
+                            'kubernetes/apps/app-service-test/deployment.yaml',
+                            "app-service-test image update (${env.IMAGE_TAG})"
+                        )
                     }
                 }
             }
         }
+
+        stage('5. 테스트 환경 배포 대기') {
+            steps {
+                container('kubectl') {
+                    sh "kubectl rollout status deployment/app-service -n web-apps-test --timeout=300s"
+                }
+            }
+        }
+
+        stage('6. 배포 승인 대기 (QA)') {
+            steps {
+                script {
+                    // 타임아웃 없음 = 승인 버튼을 누를 때까지 무한 대기
+                    // 자동 만료가 필요하면 timeout(time: 24, unit: 'HOURS') { ... } 로 감싸면 됩니다.
+                    input message: "테스트 환경(web-apps-test) QA가 완료되었습니다. 상용(app-service-prod)에 동일 이미지(${env.IMAGE_TAG})를 배포할까요?",
+                          ok: '배포 진행',
+                          submitterParameter: 'DEPLOY_APPROVER'
+                }
+            }
+        }
+
+        stage('7. GitOps 상용 환경 반영') {
+            steps {
+                container('kubectl') {
+                    script {
+                        deployToGitOps(
+                            'kubernetes/apps/app-service-prod/deployment.yaml',
+                            "app-service-prod image update (${env.IMAGE_TAG}) - approved by ${env.DEPLOY_APPROVER}"
+                        )
+                    }
+                }
+            }
+        }
+
+        stage('8. 상용 환경 배포 확인') {
+            steps {
+                container('kubectl') {
+                    sh "kubectl rollout status deployment/app-service -n web-apps --timeout=300s"
+                }
+            }
+        }
+    }
+}
+
+// gitops-repo를 clone -> sed로 이미지 태그 치환 -> commit/push
+// targetDeploymentPath: gitops-repo 루트 기준 상대 경로 (예: kubernetes/apps/app-service-test/deployment.yaml)
+def deployToGitOps(String targetDeploymentPath, String commitMsg) {
+    withCredentials([usernamePassword(credentialsId: 'gitlab-checkout-cred', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+        sh """
+            git config --global user.email "jenkins@jenkins.com"
+            git config --global user.name "Jenkins-CI"
+            git config --global http.sslVerify false
+            rm -rf gitops-repo-tmp
+            CLEAN_PASSWORD=\$(echo -n "\${GIT_PASSWORD}" | tr -d '\\n\\r')
+            CLEAN_USERNAME=\$(echo -n "\${GIT_USERNAME}" | tr -d '\\n\\r')
+            git clone -b main "http://\${CLEAN_USERNAME}:\${CLEAN_PASSWORD}@10.0.4.10:8080/root/gitops-repo.git" gitops-repo-tmp
+            sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/${targetDeploymentPath}
+            cd gitops-repo-tmp
+            git add ${targetDeploymentPath}
+            git commit -m "${commitMsg}"
+            git push origin main
+        """
     }
 }
