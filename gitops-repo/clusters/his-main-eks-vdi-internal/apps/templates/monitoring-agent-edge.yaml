@@ -17,7 +17,7 @@ spec:
         alertmanager:
           enabled: true
           alertmanagerSpec:
-            # 🌟 semver 파싱용 (커스텀 태그 prefix 때문에 image.tag를 그대로 버전으로 못 씀)
+            #  semver 파싱용 (커스텀 태그 prefix 때문에 image.tag를 그대로 버전으로 못 씀)
             version: "0.33.0"
             image:
               registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
@@ -26,7 +26,7 @@ spec:
 
         prometheus-node-exporter:
           enabled: true
-          # 🌟 semverCompare 내부 로직용 (ECR 커스텀 태그는 semver 형식이 아니라서 별도로 필요)
+          #  semverCompare 내부 로직용 (ECR 커스텀 태그는 semver 형식이 아니라서 별도로 필요)
           version: "1.8.2"
           image:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
@@ -52,7 +52,7 @@ spec:
             registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
             repository: vdi/pod-image
             tag: prometheus-operator-v0.79.2
-          # 🌟 추가: Prometheus/Alertmanager 파드에 사이드카로 주입되는
+          #  추가: Prometheus/Alertmanager 파드에 사이드카로 주입되는
           # config-reloader 이미지도 private ECR로 지정 (air-gapped 환경 대응)
           prometheusConfigReloader:
             image:
@@ -64,7 +64,7 @@ spec:
           enabled: true
           agentMode: true
           prometheusSpec:
-            # 🌟 semver 파싱용 (커스텀 태그 prefix 때문에 image.tag를 그대로 버전으로 못 씀)
+            #semver 파싱용 (커스텀 태그 prefix 때문에 image.tag를 그대로 버전으로 못 씀)
             version: "3.1.0"
             image:
               registry: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com
@@ -76,11 +76,12 @@ spec:
                 - targetLabel: cluster
                   replacement: edge-2
   destination:
-    server: '{{ .Values.global.edgeApiUrl }}'
+    server: '{{ required "global.edgeApiUrl is required (ApplicationSet must inject edge cluster API URL)" .Values.global.edgeApiUrl }}'
     namespace: monitoring
   syncPolicy:
     automated: { prune: true, selfHeal: true }
-    # 🌟 추가: 네임스페이스 자동 생성 + 대용량 CRD ServerSideApply
+    # 추가: 네임스페이스 자동 생성 + 대용량 CRD ServerSideApply
     syncOptions:
       - ServerSideApply=true
       - CreateNamespace=true
+

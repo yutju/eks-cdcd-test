@@ -46,7 +46,7 @@ spec:
           serviceMonitor:
             enabled: true
   destination:
-    server: '{{ .Values.global.edgeApiUrl }}'
+    server: '{{ required "global.edgeApiUrl is required (ApplicationSet must inject edge cluster API URL)" .Values.global.edgeApiUrl }}'
     namespace: security
   syncPolicy:
     automated:
@@ -54,3 +54,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+

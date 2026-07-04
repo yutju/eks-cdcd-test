@@ -33,10 +33,11 @@ spec:
                 - targetLabel: cluster
                   replacement: edge-1
   destination:
-    server: '{{ .Values.global.edgeApiUrl }}'
+    server: '{{ required "global.edgeApiUrl is required (ApplicationSet must inject edge cluster API URL)" .Values.global.edgeApiUrl }}'
     namespace: monitoring
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions:
       - ServerSideApply=true
       - CreateNamespace=true
+

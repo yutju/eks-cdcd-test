@@ -1,3 +1,7 @@
 apiVersion: v2
 name: edge-1-apps
 version: 1.0.0
+dependencies:
+  - name: my-kafka-pipeline
+    version: 0.1.0
+    repository: "file://../my-kafka-pipeline"

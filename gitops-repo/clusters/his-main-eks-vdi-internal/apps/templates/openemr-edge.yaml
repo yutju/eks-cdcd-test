@@ -1,3 +1,4 @@
+
 # gitops-repo/clusters/his-main-eks-vdi-internal/apps/templates/openemr-edge.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -11,7 +12,7 @@ spec:
     path: kubernetes/apps/openemr
     targetRevision: main
   destination:
-    server: '{{ .Values.global.edgeApiUrl }}'   # ApplicationSet이 자동으로 VDI 클러스터 주소 주입
+    server: '{{ required "global.edgeApiUrl is required (ApplicationSet must inject edge cluster API URL)" .Values.global.edgeApiUrl }}'   # ApplicationSet이 자동으로 VDI 클러스터 주소 주입
     namespace: his-emr
   syncPolicy:
     automated:
@@ -24,3 +25,4 @@ spec:
       kind: Deployment      
       jsonPointers:         
         - /spec/replicas    
+
