@@ -1,0 +1,23 @@
+# KEDA ScaledObject: app-service (prod) 파드 스케일링
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: app-service-prod-scaledobject
+  namespace: web-apps
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app-service
+  minReplicaCount: 3
+  maxReplicaCount: 10
+  cooldownPeriod: 60
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "60"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "70"

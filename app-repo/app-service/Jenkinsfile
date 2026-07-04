@@ -126,7 +126,7 @@ spec:
                                 CLEAN_PASSWORD=\$(echo -n "\${GIT_PASSWORD}" | tr -d '\\n\\r')
                                 CLEAN_USERNAME=\$(echo -n "\${GIT_USERNAME}" | tr -d '\\n\\r')
                                 git clone -b main "http://\${CLEAN_USERNAME}:\${CLEAN_PASSWORD}@10.0.4.10:8080/root/gitops-repo.git" gitops-repo-tmp
-                                sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/app-service/deployment.yaml
+                                sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/app-service-test/deployment.yaml
                                 cd gitops-repo-tmp
                                 git add kubernetes/apps/app-service/deployment.yaml
                                 git commit -m "app-service image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG})"
