@@ -137,11 +137,12 @@ spec:
         stage('6. 배포 승인 대기 (QA)') {
             steps {
                 script {
-                    // 타임아웃 없음 = 승인 버튼을 누를 때까지 무한 대기
-                    // 자동 만료가 필요하면 timeout(time: 24, unit: 'HOURS') { ... } 로 감싸면 됩니다.
-                    input message: "테스트 환경(web-apps-test) QA가 완료되었습니다. 상용(app-service-prod)에 동일 이미지(${env.IMAGE_TAG})를 배포할까요?",
-                          ok: '배포 진행',
-                          submitterParameter: 'DEPLOY_APPROVER'
+                    // [변경됨] timeout 블록 추가: 24시간 내 승인 안 할 시 자동 만료 (파이프라인 Abort)
+                    timeout(time: 24, unit: 'HOURS') {
+                        input message: "테스트 환경(web-apps-test) QA가 완료되었습니다. 상용(app-service-prod)에 동일 이미지(${env.IMAGE_TAG})를 배포할까요?",
+                              ok: '배포 진행',
+                              submitterParameter: 'DEPLOY_APPROVER'
+                    }
                 }
             }
         }
