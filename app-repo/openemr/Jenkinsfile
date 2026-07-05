@@ -56,24 +56,53 @@ spec:
             }
         }
 
+        // [수정] container('kubectl')로 명시. container 미지정 시 기본 컨테이너(jnlp)에서
+        // 실행되어 stage 0에서 설치한 git/aws-cli를 찾지 못해 실패할 수 있음.
         stage('1. 코드 체크아웃') {
-            steps { checkout scm }
+            steps {
+                container('kubectl') {
+                    checkout scm
+                }
+            }
         }
 
+        // [수정] HEAD~1이 없는 경우(첫 커밋, shallow clone depth 부족 등)를 명시적으로 처리.
+        // 비교 기준 커밋이 없으면 안전하게 "빌드 진행"으로 처리하여
+        // 정상 변경 사항이 조용히 스킵되는 것을 방지함.
         stage('1.5 변경 경로 확인') {
             steps {
-                script {
-                    def changed = sh(script: "git diff --name-only HEAD~1 HEAD || true", returnStdout: true).trim()
-                    if (!changed.contains('openemr/')) {
-                        echo "openemr 변경 없음 — 빌드 스킵"
-                        currentBuild.result = 'NOT_BUILT'
-                        error("스킵")
+                container('kubectl') {
+                    script {
+                        def changed = sh(
+                            script: '''
+                                if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+                                    git diff --name-only HEAD~1 HEAD
+                                else
+                                    echo "__FULL_BUILD__"
+                                fi
+                            ''',
+                            returnStdout: true
+                        ).trim()
+
+                        if (changed == "__FULL_BUILD__") {
+                            echo "비교 기준 커밋 없음(첫 커밋/얕은 클론) — 안전하게 빌드 진행"
+                            env.APP_CHANGED = 'true'
+                        } else if (changed.contains('openemr/')) {
+                            env.APP_CHANGED = 'true'
+                        } else {
+                            echo "openemr 변경 없음 — 이후 스테이지 스킵"
+                            env.APP_CHANGED = 'false'
+                        }
                     }
                 }
             }
         }
 
+        // [수정] error() 대신 when 조건으로 스킵 처리.
+        // 기존 방식은 error() 호출 시 currentBuild.result가 FAILURE로 재설정되어
+        // 의도한 NOT_BUILT(스킵)가 아니라 "빌드 실패"로 잘못 표시되는 문제가 있었음.
         stage('2. GitLab 웹훅 자동 등록') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     script {
@@ -89,7 +118,10 @@ spec:
             }
         }
 
+        // [참고] 별도 수정 필요: app-repo/openemr/Dockerfile이 아직 존재하지 않음.
+        // 이 스테이지는 해당 Dockerfile이 없으면 kaniko executor 단계에서 바로 실패함.
         stage('3. Docker Image Build & ECR Push (Kaniko)') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 script {
                     def awsAccountId = ""
@@ -114,6 +146,7 @@ spec:
         }
 
         stage('4. GitOps 레포 자동 수정 및 푸시') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     script {
@@ -139,3 +172,4 @@ spec:
         }
     }
 }
+

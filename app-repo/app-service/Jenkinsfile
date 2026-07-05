@@ -1,4 +1,4 @@
-pipeline {
+ pipeline {
     agent {
         kubernetes {
             yaml """
@@ -56,24 +56,55 @@ spec:
             }
         }
 
+        // [수정] container('kubectl')로 명시. container를 지정하지 않으면
+        // Kubernetes 플러그인 기본 컨테이너(jnlp)에서 실행되어 stage 0에서 설치한
+        // git/aws-cli를 찾지 못해 실패할 수 있음.
         stage('1. 코드 체크아웃') {
-            steps { checkout scm }
+            steps {
+                container('kubectl') {
+                    checkout scm
+                }
+            }
         }
 
+        // [수정] HEAD~1이 없는 경우(첫 커밋, shallow clone depth 부족 등)를 명시적으로 처리.
+        // 기존에는 `|| true`로 삼켜져서 changed가 빈 문자열이 되고,
+        // 그 결과 정상적인 변경 사항도 "변경 없음"으로 오판되어 스킵될 위험이 있었음.
+        // 이제는 비교 기준 커밋이 없으면 안전하게 "빌드 진행"으로 처리함.
         stage('1.5 변경 경로 확인') {
             steps {
-                script {
-                    def changed = sh(script: "git diff --name-only HEAD~1 HEAD || true", returnStdout: true).trim()
-                    if (!changed.contains('app-service/')) {
-                        echo "app-service 변경 없음 — 빌드 스킵"
-                        currentBuild.result = 'NOT_BUILT'
-                        error("스킵")
+                container('kubectl') {
+                    script {
+                        def changed = sh(
+                            script: '''
+                                if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+                                    git diff --name-only HEAD~1 HEAD
+                                else
+                                    echo "__FULL_BUILD__"
+                                fi
+                            ''',
+                            returnStdout: true
+                        ).trim()
+
+                        if (changed == "__FULL_BUILD__") {
+                            echo "비교 기준 커밋 없음(첫 커밋/얕은 클론) — 안전하게 빌드 진행"
+                            env.APP_CHANGED = 'true'
+                        } else if (changed.contains('app-service/')) {
+                            env.APP_CHANGED = 'true'
+                        } else {
+                            echo "app-service 변경 없음 — 이후 스테이지 스킵"
+                            env.APP_CHANGED = 'false'
+                        }
                     }
                 }
             }
         }
 
+        // [수정] error()로 파이프라인을 강제 중단하지 않고 when 조건으로 스킵.
+        // 기존 방식은 error() 호출 시 currentBuild.result가 FAILURE로 재설정되어
+        // 의도한 NOT_BUILT(스킵)가 아니라 "빌드 실패"로 잘못 표시되는 문제가 있었음.
         stage('2. GitLab 웹훅 자동 등록') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     script {
@@ -90,6 +121,7 @@ spec:
         }
 
         stage('3. Docker Image Build & ECR Push (Kaniko)') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 script {
                     def awsAccountId = ""
@@ -114,6 +146,7 @@ spec:
         }
 
         stage('4. GitOps 테스트 환경 반영') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     script {
@@ -126,7 +159,14 @@ spec:
             }
         }
 
+        // [참고] ArgoCD sync 타이밍 이슈: GitLab -> ArgoCD 웹훅 연동이 안 되어 있으면
+        // ArgoCD는 기본 polling 주기(기본 3분)로만 변경을 감지함. 그 경우 push 직후
+        // 실행되는 아래 rollout status가 아직 반영 전 Deployment를 대상으로 "이미 롤아웃
+        // 완료"라고 즉시 통과해버릴 수 있음 (실제로는 새 이미지가 아직 안 올라간 상태).
+        // GitLab->ArgoCD 웹훅 연동 여부 확인 후, 안 되어 있다면 여기에 명시적으로
+        // `argocd app sync <app-name>` 호출을 추가하는 것을 권장.
         stage('5. 테스트 환경 배포 대기') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     sh "kubectl rollout status deployment/app-service -n web-apps-test --timeout=300s"
@@ -135,9 +175,10 @@ spec:
         }
 
         stage('6. 배포 승인 대기 (QA)') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 script {
-                    // [변경됨] timeout 블록 추가: 24시간 내 승인 안 할 시 자동 만료 (파이프라인 Abort)
+                    // 24시간 내 승인 안 할 시 자동 만료 (파이프라인 Abort)
                     timeout(time: 24, unit: 'HOURS') {
                         input message: "테스트 환경(web-apps-test) QA가 완료되었습니다. 상용(app-service-prod)에 동일 이미지(${env.IMAGE_TAG})를 배포할까요?",
                               ok: '배포 진행',
@@ -148,6 +189,7 @@ spec:
         }
 
         stage('7. GitOps 상용 환경 반영') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     script {
@@ -160,7 +202,9 @@ spec:
             }
         }
 
+        // [참고] 위 5번 스테이지와 동일한 ArgoCD sync 타이밍 이슈가 여기에도 적용됨.
         stage('8. 상용 환경 배포 확인') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     sh "kubectl rollout status deployment/app-service -n web-apps --timeout=300s"
@@ -190,3 +234,4 @@ def deployToGitOps(String targetDeploymentPath, String commitMsg) {
         """
     }
 }
+

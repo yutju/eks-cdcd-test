@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-service-ingress
+  namespace: web-apps   # Deployment/Service와 동일한 네임스페이스로 통일
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    # HTTPS 필요 시 아래 3줄 주석 해제 + ACM 인증서 ARN 채우기
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    # alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-northeast-2:278584440977:certificate/xxxx"
+    # alb.ingress.kubernetes.io/ssl-redirect: '443'
+
+    # ExternalDNS(퍼블릭 존 담당 인스턴스)가 이 host를 보고
+    # Route53 퍼블릭 호스티드존에 자동으로 A(Alias) 레코드를 생성/관리함
+    external-dns.alpha.kubernetes.io/hostname: "prod.your-domain.com"
+spec:
+  ingressClassName: alb
+  rules:
+  - host: "prod.your-domain.com"   # 실제 상용 도메인으로 변경
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: app-service   # 실제 Service 이름과 일치
+            port:
+              number: 80
+

@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns-public
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://kubernetes-sigs.github.io/external-dns/'
+    chart: external-dns
+    targetRevision: 1.14.3
+    helm:
+      values: |
+        provider: aws
+        aws:
+          zoneType: public   # 기존 external-dns(private)와 분리된 퍼블릭 전용 인스턴스
+        # 실제 상용 도메인의 루트 존으로 변경 (예: your-domain.com)
+        domainFilters:
+          - your-domain.com
+
+        serviceAccount:
+          create: true
+          name: external-dns-public
+          annotations:
+            # IRSA: 퍼블릭 Route53 호스티드존에 대한 변경 권한을 가진 IAM Role ARN으로 변경
+            # (기존 external-dns-role과는 별도로, 대상 zone이 다르므로 신규 Role 권장)
+            eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/his-main-external-dns-public-role"
+
+        policy: upsert-only
+        registry: txt
+        # 기존 private 인스턴스와 TXT owner-id가 겹치면 서로의 레코드를 소유권 충돌로 삭제할 수 있어
+        # 반드시 다른 값으로 지정
+        txtOwnerId: my-cluster-id-public
+
+        sources:
+          - service
+          - ingress
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+

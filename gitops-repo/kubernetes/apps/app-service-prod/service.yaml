@@ -4,10 +4,13 @@ metadata:
   name: app-service
   namespace: web-apps
 spec:
-  type: LoadBalancer
+  # Ingress(ALB, target-type: ip)가 파드 IP로 직접 라우팅하므로
+  # Service 자체가 별도 ELB를 만들 필요 없음. LoadBalancer -> ClusterIP로 변경.
+  type: ClusterIP
   selector:
     app: app-service
   ports:
   - protocol: TCP
     port: 80
     targetPort: 80
+

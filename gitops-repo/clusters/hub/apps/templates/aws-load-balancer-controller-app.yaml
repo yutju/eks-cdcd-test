@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aws-load-balancer-controller
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'https://aws.github.io/eks-charts'
+    chart: aws-load-balancer-controller
+    targetRevision: 1.8.1
+    helm:
+      values: |
+        # 실제 hub EKS 클러스터 이름으로 변경 필요
+        clusterName: his-main-eks-devops
+        region: ap-northeast-2
+
+        # infra 노드에 배치 (cluster-autoscaler와 동일한 컨벤션)
+        nodeSelector:
+          role: infra
+        tolerations:
+          - key: "dedicated"
+            operator: "Equal"
+            value: "infra"
+            effect: "NoSchedule"
+
+        serviceAccount:
+          create: true
+          name: aws-load-balancer-controller
+          annotations:
+            # IRSA: ALB/ELB 리소스를 생성/관리할 수 있는 IAM Role ARN으로 변경
+            eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/his-main-aws-load-balancer-controller-role"
+
+        # VPC ID는 컨트롤러가 IMDS로 자동 탐지하나, 명시하면 더 안전함
+        # vpcId: "vpc-xxxxxxxx"
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
