@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edge-main-kafka-monitoring
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: '{{ .Values.global.gitlabUrl }}/root/gitops-repo.git'
+    path: clusters/his-main-eks-main/apps/monitoring
+    targetRevision: main
+    directory:
+      recurse: true
+    # kafka-podmonitor.yaml, windows-ad-scrapeconfig.yaml은 순수 k8s 매니페스트(PodMonitor, ScrapeConfig)라
+    # helm 옵션이 아닌 directory 소스로 지정. 기존에는 이 폴더가 templates/가 아니라서
+    # Helm이 아예 렌더링하지 않아 어디에도 배포되지 않고 있었음.
+  destination:
+    # edge-1-monitoring-agent(Prometheus Operator)가 이미 이 클러스터에 떠 있어야
+    # PodMonitor/ScrapeConfig CRD가 존재함 (monitoring-agent-edge.yaml, sync-wave: "1")
+    server: '{{ required "global.edgeApiUrl is required (ApplicationSet must inject edge cluster API URL)" .Values.global.edgeApiUrl }}'
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+

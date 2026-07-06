@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edge-main-kafka-pipeline
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: '{{ .Values.global.gitlabUrl }}/root/gitops-repo.git'
+    path: clusters/his-main-eks-main/apps/my-kafka-pipeline
+    targetRevision: main
+    # my-kafka-pipeline은 자체 Chart.yaml(strimzi-kafka-operator subchart 포함)을 가진
+    # 독립 Helm 차트이므로, helm 옵션 없이 경로만 지정해도 ArgoCD가 자동으로 Helm 차트로 인식함
+  destination:
+    # 반드시 edge 클러스터(his-main-eks-main)로 향해야 함.
+    # 기존에는 이 차트가 edge-1-apps의 subchart로 물려있어서
+    # 부모 Application의 destination(hub 클러스터)을 그대로 따라가는 버그가 있었음.
+    server: '{{ required "global.edgeApiUrl is required (ApplicationSet must inject edge cluster API URL)" .Values.global.edgeApiUrl }}'
+    namespace: kafka
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
