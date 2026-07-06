@@ -169,6 +169,19 @@ spec:
             }
         }
 
+        // [신규] 이전 빌드의 9단계에서 test를 replicas=0으로 내려놨을 수 있음.
+        // ArgoCD selfHeal이 알아서 1로 복구해줄 거라 기대하지 않고,
+        // Jenkins가 직접 확실하게 1로 올려서 5단계 rollout 대기가
+        // 타이밍 꼬임 없이 정확히 이번 이미지 기준으로 진행되게 함.
+        stage('4.5 테스트 환경 파드 재시작') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
+            steps {
+                container('kubectl') {
+                    sh "kubectl scale deployment/app-service -n web-apps-test --replicas=1"
+                }
+            }
+        }
+
         // [참고] ArgoCD sync 타이밍 이슈: GitLab -> ArgoCD 웹훅 연동이 안 되어 있으면
         // ArgoCD는 기본 polling 주기(기본 3분)로만 변경을 감지함. 그 경우 push 직후
         // 실행되는 아래 rollout status가 아직 반영 전 Deployment를 대상으로 "이미 롤아웃
@@ -218,6 +231,21 @@ spec:
             steps {
                 container('kubectl') {
                     sh "kubectl rollout status deployment/app-service -n web-apps --timeout=300s"
+                }
+            }
+        }
+
+        // [신규] prod 배포가 성공적으로 끝났으니, 더 이상 필요 없는
+        // test 환경(Fargate) 파드를 0개로 줄여서 비용을 절감함.
+        // GitOps 파일의 replicas 값 자체는 안 건드리고(다음 배포 때 다시 1로 시작),
+        // 런타임에서만 scale down함. app-service-test-app.yaml의
+        // ignoreDifferences(/spec/replicas)가 있어야 ArgoCD selfHeal이
+        // 이 값을 다시 1로 되돌리지 않음.
+        stage('9. 테스트 환경 파드 정리') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
+            steps {
+                container('kubectl') {
+                    sh "kubectl scale deployment/app-service -n web-apps-test --replicas=0"
                 }
             }
         }

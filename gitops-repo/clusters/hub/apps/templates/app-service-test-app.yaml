@@ -14,10 +14,15 @@ spec:
     server: 'https://kubernetes.default.svc'
     namespace: web-apps-test
   syncPolicy:
-    automated: { prune: true, selfHeal: true }
+    automated:
+      prune: true
+      selfHeal: false   # Jenkins가 명시적으로 scale(0/1)하는 값을 ArgoCD가 되돌리지 않도록.
+                          # Git에 새 커밋이 push되면(이미지 태그 변경) 여전히 자동 sync는 됨 -
+                          # 단지 "Git과 실제 상태가 다르다"는 이유만으로 강제로 되돌리는
+                          # drift correction만 꺼두는 것.
     syncOptions:
       - CreateNamespace=true
-  ignoreDifferences:    
+  ignoreDifferences:
     - group: apps
       kind: Deployment
       jsonPointers:
