@@ -19,6 +19,15 @@ spec:
               operator: "Equal"
               value: "infra"
               effect: "NoSchedule"
+          admissionWebhooks:
+            patch:
+              nodeSelector:
+                role: infra
+              tolerations:
+                - key: "dedicated"
+                  operator: "Equal"
+                  value: "infra"
+                  effect: "NoSchedule"
 
         grafana:
           enabled: true
@@ -111,3 +120,4 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
+

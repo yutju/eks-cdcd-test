@@ -1,3 +1,4 @@
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,12 +18,13 @@ spec:
       - name: app-service
         image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/web-service/app-image:placeholder
         ports:
-        - containerPort: 80   # 실제 앱 포트로 수정 필요
+        - containerPort: 4000
         resources:
           requests: { cpu: "100m", memory: "128Mi" }
           limits:   { cpu: "500m", memory: "256Mi" }
         readinessProbe:
-          httpGet: { path: /, port: 80 }
+          httpGet: { path: /healthz, port: 4000 }
           initialDelaySeconds: 5
           timeoutSeconds: 3
           periodSeconds: 10
+

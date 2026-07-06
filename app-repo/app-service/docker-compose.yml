@@ -1,0 +1,10 @@
+services:
+  app:
+    build:
+      context: .
+    container_name: patient-portal-app
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.docker
+    ports:
+      - "4000:4000"

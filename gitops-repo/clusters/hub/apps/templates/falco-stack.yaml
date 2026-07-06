@@ -30,12 +30,21 @@ spec:
                     operator: NotIn
                     values:
                     - fargate
+          # DaemonSet이라 모든 실제 노드(ng-infra + ng-service)에 떠야 하므로
+          # nodeSelector/toleration 없음 (fargate만 제외)
           podSecurityContext: {}
           securityContext:
             privileged: true
 
         falcosidekick:
           enabled: true
+          nodeSelector:
+            role: infra
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "infra"
+              effect: "NoSchedule"
           config:
             prometheus:
               enabled: true
@@ -45,11 +54,7 @@ spec:
           serviceMonitor:
             enabled: true
           webui:
-            enabled: true
-            redis:
-              storageEnabled: false
-            service:
-              type: ClusterIP
+            enabled: false   # falco-consumer -> Kafka -> MySQL 파이프라인과 기능 중복이라 비활성화
 
   destination:
     server: 'https://kubernetes.default.svc'
@@ -60,3 +65,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+

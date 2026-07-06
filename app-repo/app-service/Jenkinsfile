@@ -1,4 +1,4 @@
- pipeline {
+pipeline {
     agent {
         kubernetes {
             yaml """
@@ -20,10 +20,20 @@ spec:
     envFrom:
     - configMapRef:
         name: jenkins-infra-config
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
   - name: kaniko
     image: gcr.io/kaniko-project/executor:debug
     command: ["sleep"]
     args: ["infinity"]
+    resources:
+      requests:
+        memory: "3Gi"
+        cpu: "1"
+      limits:
+        memory: "4Gi"
 """
         }
     }

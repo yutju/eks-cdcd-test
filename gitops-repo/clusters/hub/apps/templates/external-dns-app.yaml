@@ -40,6 +40,14 @@ spec:
                 name: external-dns-secret-k8s
                 key: role-arn
 
+        nodeSelector:
+          role: infra
+        tolerations:
+          - key: "dedicated"
+            operator: "Equal"
+            value: "infra"
+            effect: "NoSchedule"
+
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: monitoring
@@ -49,3 +57,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+
