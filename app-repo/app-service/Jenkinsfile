@@ -42,7 +42,7 @@ spec:
         GITLAB_API_TOKEN    = credentials('gitlab-token-id')
         GITLAB_URL          = "${env.GITLAB_URL ?: 'http://10.0.4.10:8080'}"
         GITLAB_PROJECT_ID   = "root%2Fapp-repo"
-        JENKINS_WEBHOOK_BASE_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/generic-webhook-trigger/invoke"
+        JENKINS_WEBHOOK_BASE_URL = "http://jenkins.his-main.internal:8080/generic-webhook-trigger/invoke"
         GENERIC_TRIGGER_TOKEN    = "jenkins-app-service-secret"
         AWS_REGION          = "ap-northeast-2"
         ECR_REPO_NAME       = "web-service/app-image"
@@ -191,19 +191,17 @@ spec:
                     script {
                         deployToGitOps(
                             'kubernetes/apps/app-service-test/deployment.yaml',
-                            "app-service-test image update (${env.IMAGE_TAG})"
+                            "app-service-test image update (${env.IMAGE_TAG})",
+                            'app-service-test'
                         )
                     }
                 }
             }
         }
 
-        // [참고] ArgoCD sync 타이밍 이슈: GitLab -> ArgoCD 웹훅 연동이 안 되어 있으면
-        // ArgoCD는 기본 polling 주기(기본 3분)로만 변경을 감지함. 그 경우 push 직후
-        // 실행되는 아래 rollout status가 아직 반영 전 Deployment를 대상으로 "이미 롤아웃
-        // 완료"라고 즉시 통과해버릴 수 있음 (실제로는 새 이미지가 아직 안 올라간 상태).
-        // GitLab->ArgoCD 웹훅 연동 여부 확인 후, 안 되어 있다면 여기에 명시적으로
-        // `argocd app sync <app-name>` 호출을 추가하는 것을 권장.
+        // [해결됨] ArgoCD sync 타이밍 이슈: deployToGitOps() 안에서 push 직후
+        // 곧바로 해당 Application에 hard-refresh 어노테이션을 걸어서, 3분 polling을
+        // 기다리지 않고 즉시 ArgoCD가 재확인 & sync하도록 강제함.
         stage('5. 테스트 환경 배포 대기') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
@@ -234,14 +232,17 @@ spec:
                     script {
                         deployToGitOps(
                             'kubernetes/apps/app-service-prod/deployment.yaml',
-                            "app-service-prod image update (${env.IMAGE_TAG}) - approved by ${env.DEPLOY_APPROVER}"
+                            "app-service-prod image update (${env.IMAGE_TAG}) - approved by ${env.DEPLOY_APPROVER}",
+                            'app-service-prod'
                         )
                     }
                 }
             }
         }
 
-        // [참고] 위 5번 스테이지와 동일한 ArgoCD sync 타이밍 이슈가 여기에도 적용됨.
+        // [해결됨] 위 5번과 동일하게, deployToGitOps() 안에서 이미 hard-refresh를 걸어서
+        // ArgoCD가 즉시 sync하도록 만들었으므로, 이 rollout status가 아직 반영 전
+        // Deployment를 보고 통과/실패하는 문제가 없어짐.
         stage('8. 상용 환경 배포 확인') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
@@ -256,7 +257,9 @@ spec:
 
 // gitops-repo를 clone -> sed로 이미지 태그 치환 -> commit/push
 // targetDeploymentPath: gitops-repo 루트 기준 상대 경로 (예: kubernetes/apps/app-service-prod/deployment.yaml)
-def deployToGitOps(String targetDeploymentPath, String commitMsg) {
+// argoAppName: ArgoCD Application 이름. push 직후 이 Application을 hard-refresh 시켜서
+//              3분 polling을 기다리지 않고 즉시 sync 여부를 재판단하게 만듦.
+def deployToGitOps(String targetDeploymentPath, String commitMsg, String argoAppName) {
     withCredentials([usernamePassword(credentialsId: 'gitlab-checkout-cred', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
         sh """
             git config --global user.email "jenkins@jenkins.com"
@@ -273,4 +276,13 @@ def deployToGitOps(String targetDeploymentPath, String commitMsg) {
             git push origin main
         """
     }
+
+    // push만으로는 ArgoCD가 최대 3분(polling 주기) 뒤에나 변경을 감지할 수 있어서,
+    // 바로 다음 stage의 rollout status가 timeout날 위험이 있었음.
+    // hard-refresh 어노테이션을 걸어서 즉시 재비교 + sync를 강제로 유도함.
+    sh """
+        kubectl patch application ${argoAppName} -n argocd --type merge \
+            -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+        sleep 5
+    """
 }

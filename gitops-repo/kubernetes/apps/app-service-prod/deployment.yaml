@@ -17,7 +17,7 @@ spec:
         eks.amazonaws.com/nodegroup: his-main-ng-service
       containers:
       - name: app-service
-        image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/web-service/app-image:placeholder
+        image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/web-service/app-image:build-13
         ports:
         - containerPort: 4000
         resources:

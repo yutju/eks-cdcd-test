@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aws-load-balancer-controller-vdi
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: 'https://aws.github.io/eks-charts'
+    chart: aws-load-balancer-controller
+    targetRevision: 1.8.1
+    helm:
+      values: |
+        clusterName: his-main-eks-vdi-internal
+        region: ap-northeast-2
+
+        serviceAccount:
+          create: true
+          name: aws-load-balancer-controller
+          annotations:
+            # IRSA: modules/eks_vdi/iam.tf의 aws_iam_role.aws_load_balancer_controller_vdi
+            eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/his-main-aws-load-balancer-controller-vdi-role"
+
+        # eks-vdi-internal(VPC2)은 인터넷 아웃바운드가 없어 public.ecr.aws에 도달 불가 → 자체 ECR 미러 사용
+        image:
+          repository: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/vdi/load-balancer-controller
+          tag: "v2.8.1"
+  destination:
+    server: '{{ required "global.edgeApiUrl is required (ApplicationSet must inject edge cluster API URL)" .Values.global.edgeApiUrl }}'
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

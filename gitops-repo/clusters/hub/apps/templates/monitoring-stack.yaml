@@ -53,7 +53,17 @@ spec:
               value: "infra"
               effect: "NoSchedule"
           adminPassword: "army6"
-        
+
+          grafana.ini:
+            smtp:
+              enabled: true
+              host: mail.army.local:25
+              user: test@army.local
+              password: qwer1234
+              from_address: test@army.local
+              from_name: Grafana Alert
+              skip_verify: "true"
+
         prometheus:
           enabled: true
           prometheusSpec:
@@ -120,4 +130,5 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
+
 

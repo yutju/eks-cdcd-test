@@ -32,7 +32,7 @@ spec:
         GITLAB_API_TOKEN    = credentials('gitlab-token-id')
         GITLAB_URL          = "${env.GITLAB_URL ?: 'http://10.0.4.10:8080'}"
         GITLAB_PROJECT_ID   = "root%2Fapp-repo"
-        JENKINS_WEBHOOK_BASE_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/generic-webhook-trigger/invoke"
+        JENKINS_WEBHOOK_BASE_URL = "http://jenkins.his-main.internal:8080/generic-webhook-trigger/invoke"
         GENERIC_TRIGGER_TOKEN    = "jenkins-openemr-secret"
         AWS_REGION          = "ap-northeast-2"
         ECR_REPO_NAME       = "openemr"
@@ -192,3 +192,4 @@ spec:
         }
     }
 }
+

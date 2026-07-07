@@ -13,21 +13,45 @@ spec:
       labels:
         app: openemr
     spec:
-      containers:
-        - name: openemr
-          image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/openemr:latest
+      initContainers:
+        - name: init-sqlconf
+          image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/busybox:latest
+          command: ['sh', '-c', 'cp /tmp/sqlconf/sqlconf.php /tmp/sqlconf-rw/sqlconf.php && chmod 666 /tmp/sqlconf-rw/sqlconf.php']
+          volumeMounts:
+            - name: openemr-sqlconf
+              mountPath: /tmp/sqlconf
+            - name: sqlconf-rw
+              mountPath: /tmp/sqlconf-rw
+        - name: init-crypto-reset
+          image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/mariadb:10.6
           envFrom:
             - secretRef:
                 name: openemr-db-secret
+          command:
+            - sh
+            - -c
+            - |
+              rm -f /var/www/localhost/htdocs/openemr/sites/default/documents/logs_and_misc/methods/sevena
+              rm -f /var/www/localhost/htdocs/openemr/sites/default/documents/logs_and_misc/methods/sevenb
+              mariadb -h "$SQL_HOST" -u "$SQL_LOGIN" -p"$SQL_PASS" --ssl=FALSE "$SQL_DBASE" -e "DELETE FROM \`keys\`;"
+          volumeMounts:
+            - name: openemr-data
+              mountPath: /var/www/localhost/htdocs/openemr/sites
+      containers:
+        - name: openemr
+          image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/openemr:latest
           ports:
             - containerPort: 80
+          envFrom:
+            - secretRef:
+                name: openemr-db-secret
           volumeMounts:
             - name: openemr-data
               mountPath: /var/www/localhost/htdocs/openemr/sites
             - name: php-config
               mountPath: /etc/php84/conf.d/openemr-custom.ini
               subPath: openemr-custom.ini
-            - name: openemr-sqlconf
+            - name: sqlconf-rw
               mountPath: /var/www/localhost/htdocs/openemr/sites/default/sqlconf.php
               subPath: sqlconf.php
             - name: openemr-config
@@ -43,6 +67,8 @@ spec:
         - name: openemr-sqlconf
           configMap:
             name: openemr-sqlconf
+        - name: sqlconf-rw
+          emptyDir: {}
         - name: openemr-config
           configMap:
             name: openemr-config
