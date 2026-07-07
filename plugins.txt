@@ -8,3 +8,4 @@ gitlab-plugin
 credentials-binding
 plain-credentials
 aws-credentials
+generic-webhook-trigger

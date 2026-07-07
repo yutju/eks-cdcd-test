@@ -32,14 +32,31 @@ spec:
         GITLAB_API_TOKEN    = credentials('gitlab-token-id')
         GITLAB_URL          = "${env.GITLAB_URL ?: 'http://10.0.4.10:8080'}"
         GITLAB_PROJECT_ID   = "root%2Fapp-repo"
-        JENKINS_WEBHOOK_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/project/jenkins-openemr-pipeline"
+        JENKINS_WEBHOOK_BASE_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/generic-webhook-trigger/invoke"
+        GENERIC_TRIGGER_TOKEN    = "jenkins-openemr-secret"
         AWS_REGION          = "ap-northeast-2"
         ECR_REPO_NAME       = "openemr"
         IMAGE_TAG           = "${BUILD_NUMBER}"
     }
 
+    // [변경] app-service/만 바뀌어도 이 파이프라인이 트리거되던 문제를 막기 위해
+    // GenericTrigger + 경로 필터로 교체. openemr/ 변경 없으면 빌드 자체가 시작 안 됨.
     triggers {
-        gitlab(triggerOnPush: true, triggerOnMergeRequest: true, branchFilterType: 'All', secretToken: 'jenkins-openemr-secret')
+        GenericTrigger(
+            genericVariables: [
+                [key: 'ref', value: '$.ref'],
+                [key: 'modified', value: '$.commits[*].modified[*]'],
+                [key: 'added', value: '$.commits[*].added[*]'],
+                [key: 'removed', value: '$.commits[*].removed[*]']
+            ],
+            causeString: 'GitLab push 감지 (openemr 경로 필터)',
+            token: 'jenkins-openemr-secret',
+            printContributedVariables: true,
+            printPostContent: false,
+            silentResponse: false,
+            regexpFilterText: '$modified $added $removed',
+            regexpFilterExpression: '.*openemr/.*'
+        )
     }
 
     stages {
@@ -108,9 +125,12 @@ spec:
                     script {
                         def gitlabApiBase = "${env.GITLAB_URL}/api/v4"
                         sh """
-                            EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_URL}" || true)
+                            EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_BASE_URL}" || true)
                             if [ -z "\$EXISTING_HOOK" ]; then
-                                curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks?url=${env.JENKINS_WEBHOOK_URL}&push_events=true&token=jenkins-openemr-secret&enable_ssl_verification=false"
+                                curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST -G "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" \\
+                                    --data-urlencode "url=${env.JENKINS_WEBHOOK_BASE_URL}?token=${env.GENERIC_TRIGGER_TOKEN}" \\
+                                    --data-urlencode "push_events=true" \\
+                                    --data-urlencode "enable_ssl_verification=false"
                             fi
                         """
                     }
@@ -172,4 +192,3 @@ spec:
         }
     }
 }
-

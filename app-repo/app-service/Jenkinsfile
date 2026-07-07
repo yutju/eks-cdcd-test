@@ -42,14 +42,35 @@ spec:
         GITLAB_API_TOKEN    = credentials('gitlab-token-id')
         GITLAB_URL          = "${env.GITLAB_URL ?: 'http://10.0.4.10:8080'}"
         GITLAB_PROJECT_ID   = "root%2Fapp-repo"
-        JENKINS_WEBHOOK_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/project/jenkins-app-service-pipeline"
+        JENKINS_WEBHOOK_BASE_URL = "http://${env.JENKINS_IP}:${env.JENKINS_PORT}/generic-webhook-trigger/invoke"
+        GENERIC_TRIGGER_TOKEN    = "jenkins-app-service-secret"
         AWS_REGION          = "ap-northeast-2"
         ECR_REPO_NAME       = "web-service/app-image"
         IMAGE_TAG           = "build-${BUILD_NUMBER}"
     }
 
+    // [변경] gitlab() 트리거는 리포지토리 전체 push에 반응해서, openemr/만 바뀌어도
+    // 이 파이프라인이 매번 트리거됨(1.5단계에서 스킵은 되지만 에이전트 파드가 불필요하게 뜸).
+    // GenericTrigger + 경로 필터로 바꿔서, app-service/ 변경이 없으면
+    // 빌드 자체가 아예 시작되지 않게 함.
+    // 주의: JSONPath 추출 결과는 Jenkins Job 설정 화면의 GenericTrigger
+    // "webhook 테스트" 기능으로 실제 GitLab payload에 맞게 한번 검증 필요.
     triggers {
-        gitlab(triggerOnPush: true, triggerOnMergeRequest: true, branchFilterType: 'NameBasedFilter', includeBranchesSpec: 'main', secretToken: 'jenkins-app-service-secret')
+        GenericTrigger(
+            genericVariables: [
+                [key: 'ref', value: '$.ref'],
+                [key: 'modified', value: '$.commits[*].modified[*]'],
+                [key: 'added', value: '$.commits[*].added[*]'],
+                [key: 'removed', value: '$.commits[*].removed[*]']
+            ],
+            causeString: 'GitLab push 감지 (app-service 경로 필터)',
+            token: 'jenkins-app-service-secret',
+            printContributedVariables: true,
+            printPostContent: false,
+            silentResponse: false,
+            regexpFilterText: '$ref $modified $added $removed',
+            regexpFilterExpression: '^refs/heads/main.*app-service/.*$'
+        )
     }
 
     stages {
@@ -119,10 +140,16 @@ spec:
                 container('kubectl') {
                     script {
                         def gitlabApiBase = "${env.GITLAB_URL}/api/v4"
+                        // -G: --data-urlencode 값들을 POST body가 아니라 URL 쿼리스트링으로 붙임
+                        // (이 GitLab 인스턴스의 hooks API가 body 방식은 안 받아서 쿼리스트링 방식 유지,
+                        //  단 특수문자(? 등)는 -G + --data-urlencode 조합으로 안전하게 인코딩됨)
                         sh """
-                            EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_URL}" || true)
+                            EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_BASE_URL}" || true)
                             if [ -z "\$EXISTING_HOOK" ]; then
-                                curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks?url=${env.JENKINS_WEBHOOK_URL}&push_events=true&token=jenkins-app-service-secret&enable_ssl_verification=false"
+                                curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST -G "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" \\
+                                    --data-urlencode "url=${env.JENKINS_WEBHOOK_BASE_URL}?token=${env.GENERIC_TRIGGER_TOKEN}" \\
+                                    --data-urlencode "push_events=true" \\
+                                    --data-urlencode "enable_ssl_verification=false"
                             fi
                         """
                     }
@@ -155,6 +182,8 @@ spec:
             }
         }
 
+        // [변경] test 환경을 상시 EC2 배포로 전환하면서, replicas 켜고 끄는 로직 자체가
+        // 필요 없어짐. prod와 동일하게 이미지 태그만 반영하면 됨.
         stage('4. GitOps 테스트 환경 반영') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
@@ -165,19 +194,6 @@ spec:
                             "app-service-test image update (${env.IMAGE_TAG})"
                         )
                     }
-                }
-            }
-        }
-
-        // [신규] 이전 빌드의 9단계에서 test를 replicas=0으로 내려놨을 수 있음.
-        // ArgoCD selfHeal이 알아서 1로 복구해줄 거라 기대하지 않고,
-        // Jenkins가 직접 확실하게 1로 올려서 5단계 rollout 대기가
-        // 타이밍 꼬임 없이 정확히 이번 이미지 기준으로 진행되게 함.
-        stage('4.5 테스트 환경 파드 재시작') {
-            when { environment name: 'APP_CHANGED', value: 'true' }
-            steps {
-                container('kubectl') {
-                    sh "kubectl scale deployment/app-service -n web-apps-test --replicas=1"
                 }
             }
         }
@@ -235,25 +251,11 @@ spec:
             }
         }
 
-        // [신규] prod 배포가 성공적으로 끝났으니, 더 이상 필요 없는
-        // test 환경(Fargate) 파드를 0개로 줄여서 비용을 절감함.
-        // GitOps 파일의 replicas 값 자체는 안 건드리고(다음 배포 때 다시 1로 시작),
-        // 런타임에서만 scale down함. app-service-test-app.yaml의
-        // ignoreDifferences(/spec/replicas)가 있어야 ArgoCD selfHeal이
-        // 이 값을 다시 1로 되돌리지 않음.
-        stage('9. 테스트 환경 파드 정리') {
-            when { environment name: 'APP_CHANGED', value: 'true' }
-            steps {
-                container('kubectl') {
-                    sh "kubectl scale deployment/app-service -n web-apps-test --replicas=0"
-                }
-            }
-        }
     }
 }
 
 // gitops-repo를 clone -> sed로 이미지 태그 치환 -> commit/push
-// targetDeploymentPath: gitops-repo 루트 기준 상대 경로 (예: kubernetes/apps/app-service-test/deployment.yaml)
+// targetDeploymentPath: gitops-repo 루트 기준 상대 경로 (예: kubernetes/apps/app-service-prod/deployment.yaml)
 def deployToGitOps(String targetDeploymentPath, String commitMsg) {
     withCredentials([usernamePassword(credentialsId: 'gitlab-checkout-cred', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
         sh """
@@ -272,4 +274,3 @@ def deployToGitOps(String targetDeploymentPath, String commitMsg) {
         """
     }
 }
-

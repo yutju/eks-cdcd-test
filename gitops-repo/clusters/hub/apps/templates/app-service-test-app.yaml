@@ -16,15 +16,9 @@ spec:
   syncPolicy:
     automated:
       prune: true
-      selfHeal: false   # Jenkins가 명시적으로 scale(0/1)하는 값을 ArgoCD가 되돌리지 않도록.
-                          # Git에 새 커밋이 push되면(이미지 태그 변경) 여전히 자동 sync는 됨 -
-                          # 단지 "Git과 실제 상태가 다르다"는 이유만으로 강제로 되돌리는
-                          # drift correction만 꺼두는 것.
+      selfHeal: true   # 이제 replicas도 전부 Git이 원본이라, selfHeal을 켜놔도
+                         # Jenkins가 커밋한 값과 항상 일치해서 충돌이 안 남.
     syncOptions:
       - CreateNamespace=true
-  ignoreDifferences:
-    - group: apps
-      kind: Deployment
-      jsonPointers:
-        - /spec/replicas
-
+  # ignoreDifferences 제거함 - kubectl scale로 클러스터를 직접 건드리던 시절엔
+  # 필요했지만, 이제 replicas도 Git 커밋으로만 변경하므로 드리프트 자체가 안 생김.
