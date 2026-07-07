@@ -26,7 +26,9 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: app-service   # 실제 Service 이름과 일치
+            name: app-service   # Rollout의 stableService와 일치해야 함
             port:
-              number: 80
-
+              # [카나리] 고정 포트 대신 use-annotation 사용.
+              # Argo Rollouts가 alb.ingress.kubernetes.io/actions.app-service
+              # annotation을 주입해서 stable/canary 타겟그룹 가중치를 제어함.
+              name: use-annotation

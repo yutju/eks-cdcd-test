@@ -1,0 +1,16 @@
+# 카나리 파드 전용 Service.
+# Argo Rollouts가 selector에 rollouts-pod-template-hash를 주입해서
+# 새 버전 파드만 가리키게 만들고, ALB 타겟그룹 가중치 분할 대상으로 사용함.
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service-canary
+  namespace: web-apps
+spec:
+  type: ClusterIP
+  selector:
+    app: app-service
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 4000

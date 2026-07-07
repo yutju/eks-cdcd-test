@@ -7,7 +7,6 @@ const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
-
 const authRoutes = require('./routes/auth');
 const adminAuthRoutes = require('./routes/adminAuth');
 const adminRoutes = require('./routes/admin');
@@ -18,15 +17,18 @@ const boardRoutes = require('./routes/board');
 const telemedicineRoutes = require('./routes/telemedicine');
 const messageRoutes = require('./routes/message');
 require('./jobs/appointmentReminder');
-
+const { metricsMiddleware, metricsHandler } = require('./metrics');
 const app = express();
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use(express.json());
-
+// [카나리] 모든 요청 계측 — 반드시 라우트 등록보다 앞에 위치해야 함
+app.use(metricsMiddleware);
 // EKS/ECS liveness/readiness probe용 헬스체크 엔드포인트
 app.get('/healthz', (req, res) => res.status(200).json({ status: 'ok' }));
 app.get('/readyz', (req, res) => res.status(200).json({ status: 'ready' }));
-
+// [카나리] Prometheus 스크레이프 엔드포인트.
+// 맨 아래 SPA catch-all(app.get('*'))보다 앞에 있어야 index.html이 아닌 메트릭이 응답됨.
+app.get('/metrics', metricsHandler);
 // 프론트엔드(React)가 같은 서버에서 서빙되므로, API는 전부 /api 아래로 모아서
 // 프론트 페이지 경로(/health, /board, /medical 등)와 절대 겹치지 않게 합니다.
 app.use('/api/auth', authRoutes);
@@ -38,23 +40,18 @@ app.use('/api/health', healthRoutes);
 app.use('/api/board', boardRoutes);
 app.use('/api/telemedicine', telemedicineRoutes);
 app.use('/api/message', messageRoutes);
-
 // 프론트엔드 빌드 결과물 (Dockerfile에서 ./public 으로 복사해 둠)
 const publicDir = path.join(__dirname, '../public');
 app.use(express.static(publicDir));
-
 // 그 외 모든 GET 요청(React Router 클라이언트 사이드 라우팅용)은 index.html로
 // 예: /staff/login, /medical, /board 등을 주소창에 직접 치거나 새로고침해도 정상 동작
 app.get('*', (req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
-
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: process.env.FRONTEND_URL || '*' } });
-
 // 라우트 핸들러에서 req.app.get('io')로 접근해서 실시간 알림을 보낼 수 있게 등록
 app.set('io', io);
-
 // 환자 토큰(role:'patient')과 관리자 토큰(role:'admin') 둘 다 접속 가능하게 인증
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
@@ -67,7 +64,6 @@ io.use((socket, next) => {
     next(new Error('인증 실패'));
   }
 });
-
 io.on('connection', (socket) => {
   if (socket.role === 'admin') {
     // 관리자는 전체 상담 목록 갱신 알림을 받는 방에 들어감
@@ -81,8 +77,6 @@ io.on('connection', (socket) => {
     socket.join(`thread_${socket.userId}`);
   }
 });
-
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`Patient portal API listening on ${PORT}`));
-
 module.exports = { app, server };

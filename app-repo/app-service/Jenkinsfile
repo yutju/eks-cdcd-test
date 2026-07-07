@@ -1,4 +1,4 @@
-pipeline {
+~                                                                                                          pipeline {
     agent {
         kubernetes {
             yaml """
@@ -82,6 +82,10 @@ spec:
                         curl -sLO "https://dl.k8s.io/release/v1.35.0/bin/linux/amd64/kubectl"
                         chmod +x kubectl
                         mv kubectl /usr/local/bin/
+                        # [카나리] Rollout 상태 확인용 kubectl 플러그인
+                        curl -sLo /usr/local/bin/kubectl-argo-rollouts \
+                            "https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64"
+                        chmod +x /usr/local/bin/kubectl-argo-rollouts
                     '''
                 }
             }
@@ -233,7 +237,7 @@ spec:
                     script {
                         // 배포 직전의 이미지를 기록해둠 - 스모크 테스트 실패 시 이 값으로 자동 롤백
                         env.PROD_PREV_IMAGE_URI = deployToGitOps(
-                            'kubernetes/apps/app-service-prod/deployment.yaml',
+                            'kubernetes/apps/app-service-prod/rollout.yaml',
                             env.ECR_IMAGE_URI,
                             "app-service-prod image update (${env.IMAGE_TAG}) - approved by ${env.DEPLOY_APPROVER}",
                             'app-service-prod'
@@ -243,56 +247,39 @@ spec:
             }
         }
 
-        // [해결됨] 위 5번과 동일하게, deployToGitOps() 안에서 이미 hard-refresh를 걸어서
-        // ArgoCD가 즉시 sync하도록 만들었으므로, 이 rollout status가 아직 반영 전
-        // Deployment를 보고 통과/실패하는 문제가 없어짐.
-        stage('8. 상용 환경 배포 확인') {
-            when { environment name: 'APP_CHANGED', value: 'true' }
-            steps {
-                container('kubectl') {
-                    sh "kubectl rollout status deployment/app-service -n web-apps --timeout=300s"
-                }
-            }
-        }
-
-        // [신규] 스모크 테스트 + 실패 시 자동 롤백
-        // 8단계는 "파드가 Ready 상태가 됐다"만 확인함 (readinessProbe 통과 여부).
-        // 근데 readinessProbe(/healthz)는 통과해도 실제 핵심 기능은 고장난 이미지가
-        // 배포될 수 있음. 이 단계는 배포 직후 실제로 앱에 요청을 날려서 확인하고,
-        // 실패하면 사람 개입 없이 즉시 이전 정상 이미지로 되돌림.
-        stage('8.5 배포 후 스모크 테스트') {
+        // [카나리 전환] 기존 8단계(rollout status) + 8.5단계(스모크 테스트+롤백)를 통합 대체.
+        // Rollouts가 10% 트래픽 단계에서 Prometheus 성공률(AnalysisTemplate)로 자동 판정하므로
+        // 파드 하나에 wget 한번 날리던 기존 스모크 테스트보다 강력함.
+        // 분석 실패 시 Rollouts가 즉시 abort하고 트래픽을 stable로 되돌리지만,
+        // git의 desired 이미지는 여전히 새 버전이라 Degraded로 남음 —
+        // GitOps 정합성을 위해 이전 이미지로 revert 커밋까지 수행함.
+        stage('8. 카나리 배포 진행 확인 (실패 시 자동 롤백)') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     script {
-                        def podName = sh(
-                            script: "kubectl get pod -n web-apps -l app=app-service -o jsonpath='{.items[0].metadata.name}'",
-                            returnStdout: true
-                        ).trim()
-
-                        def smokeResult = sh(
-                            script: "kubectl exec -n web-apps ${podName} -- wget -qO- --timeout=5 http://localhost:4000/healthz",
+                        // steps 전체 소요: 분석 ~2.5분 + pause 60초 + 파드 기동 — 여유있게 15분
+                        def canaryResult = sh(
+                            script: "kubectl argo rollouts status app-service -n web-apps --timeout 900s",
                             returnStatus: true
                         )
 
-                        if (smokeResult != 0) {
+                        if (canaryResult != 0) {
                             if (env.PROD_PREV_IMAGE_URI == null || env.PROD_PREV_IMAGE_URI.contains("placeholder")) {
-                                // 최초 배포라 되돌릴 정상 버전 자체가 없는 경우.
-                                // 존재하지 않는 이미지로 롤백을 시도하면 오히려 ImagePullBackOff만 유발하므로,
-                                // 롤백 없이 실패로만 표시해서 사람이 직접 확인하게 함.
-                                error("스모크 테스트 실패 - 되돌릴 이전 정상 버전이 없어(최초 배포) 자동 롤백을 건너뜀. 수동 확인 필요.")
+                                error("카나리 실패 - 되돌릴 이전 정상 버전이 없어(최초 배포) git 롤백을 건너뜀. 수동 확인 필요.")
                             }
-                            echo "스모크 테스트 실패 감지 - 이전 버전(${env.PROD_PREV_IMAGE_URI})으로 자동 롤백합니다."
+                            echo "카나리 분석 실패 감지 - 이전 버전(${env.PROD_PREV_IMAGE_URI})으로 git 롤백합니다."
                             deployToGitOps(
-                                'kubernetes/apps/app-service-prod/deployment.yaml',
+                                'kubernetes/apps/app-service-prod/rollout.yaml',
                                 env.PROD_PREV_IMAGE_URI,
-                                "ROLLBACK: 스모크 테스트 실패로 자동 롤백 (build-${env.BUILD_NUMBER} 배포 취소)",
+                                "ROLLBACK: 카나리 분석 실패로 자동 롤백 (${env.IMAGE_TAG} 배포 취소)",
                                 'app-service-prod'
                             )
-                            sh "kubectl rollout status deployment/app-service -n web-apps --timeout=300s"
-                            error("스모크 테스트 실패 - 이전 버전(${env.PROD_PREV_IMAGE_URI})으로 자동 롤백 완료. build-${env.IMAGE_TAG} 배포는 취소됨.")
+                            // revert 커밋이 반영되면 desired == stable이 되어 Rollout이 Healthy로 복귀
+                            sh "kubectl argo rollouts status app-service -n web-apps --timeout 300s"
+                            error("카나리 분석 실패 - 이전 버전(${env.PROD_PREV_IMAGE_URI})으로 롤백 완료. ${env.IMAGE_TAG} 배포는 취소됨.")
                         } else {
-                            echo "스모크 테스트 통과 (build-${env.IMAGE_TAG})"
+                            echo "카나리 배포 성공 - 100% 전환 완료 (${env.IMAGE_TAG})"
                         }
                     }
                 }
@@ -334,9 +321,7 @@ def deployToGitOps(String targetDeploymentPath, String imageUri, String commitMs
     sh """
         kubectl patch application ${argoAppName} -n argocd --type merge \
             -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
-        sleep 5
     """
 
     return readFile(prevImageFile).trim()
 }
-

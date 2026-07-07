@@ -1,0 +1,23 @@
+# app-service 파드의 /metrics 스크레이프.
+# ServiceMonitor가 아닌 PodMonitor를 쓰는 이유: 카나리 진행 중 stable Service의
+# endpoint에서 카나리 파드가 빠지므로, Service 기준이 아닌 파드 라벨 기준으로 수집해야
+# stable/canary 양쪽 메트릭이 전부 잡힘.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: app-service-prod
+  namespace: web-apps
+  labels:
+    release: monitoring-stack   # kube-prometheus-stack이 이 라벨 있는 PodMonitor만 인식
+spec:
+  selector:
+    matchLabels:
+      app: app-service
+  # Rollouts가 파드에 주입하는 해시 라벨을 메트릭 라벨로 승격 —
+  # AnalysisTemplate 쿼리가 이 라벨로 카나리 파드만 필터링함
+  podTargetLabels:
+    - rollouts-pod-template-hash
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

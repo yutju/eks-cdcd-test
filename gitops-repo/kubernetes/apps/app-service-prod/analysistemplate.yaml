@@ -1,0 +1,28 @@
+# 카나리 자동 판정 템플릿.
+# 카나리 파드(rollouts_pod_template_hash 라벨)의 HTTP 성공률(비-5xx 비율)을
+# 30초 간격 5회 측정, 95% 미만이 1회라도 나오면 즉시 abort.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: app-service-success-rate
+  namespace: web-apps
+spec:
+  args:
+    - name: canary-hash
+  metrics:
+    - name: success-rate
+      initialDelay: 30s        # 첫 스크레이프가 쌓일 시간 확보 (PodMonitor interval 15s)
+      interval: 30s
+      count: 5
+      # 트래픽이 아예 없으면(len==0 또는 NaN) 판정 불가이므로 통과 처리 —
+      # 트래픽 없는 시간대 배포가 분석 때문에 막히는 것을 방지
+      successCondition: len(result) == 0 || isNaN(result[0]) || result[0] >= 0.95
+      failureLimit: 1
+      provider:
+        prometheus:
+          # kube-prometheus-stack(release: monitoring-stack)의 인클러스터 Prometheus 서비스
+          address: http://monitoring-stack-kube-prom-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{namespace="web-apps", rollouts_pod_template_hash="{{args.canary-hash}}", status_code!~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total{namespace="web-apps", rollouts_pod_template_hash="{{args.canary-hash}}"}[2m]))

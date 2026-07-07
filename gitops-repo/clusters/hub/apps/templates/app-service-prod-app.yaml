@@ -1,4 +1,4 @@
-# clusters/hub/apps/templates/app-service-prod-app.yaml (기존 app-service-app.yaml 대체)
+# clusters/hub/apps/templates/app-service-prod-app.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -17,8 +17,17 @@ spec:
     automated: { prune: true, selfHeal: true }
     syncOptions:
       - CreateNamespace=true
-  ignoreDifferences:      
-    - group: apps           
-      kind: Deployment       
-      jsonPointers:         
-        - /spec/replicas    
+      # ignoreDifferences 항목을 sync 시에도 덮어쓰지 않게 함 —
+      # 없으면 selfHeal이 KEDA replica 수와 Rollouts의 ALB annotation을 계속 되돌림
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    # KEDA가 관리하는 replica 수 (Deployment → Rollout으로 kind 변경)
+    - group: argoproj.io
+      kind: Rollout
+      jsonPointers:
+        - /spec/replicas
+    # Argo Rollouts가 주입/관리하는 ALB 가중치 annotation — git에는 없는 게 정상
+    - group: networking.k8s.io
+      kind: Ingress
+      jqPathExpressions:
+        - .metadata.annotations."alb.ingress.kubernetes.io/actions.app-service"

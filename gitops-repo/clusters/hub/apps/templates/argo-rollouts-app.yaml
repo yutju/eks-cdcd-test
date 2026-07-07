@@ -1,0 +1,36 @@
+# Argo Rollouts 컨트롤러 — app-service-prod 카나리 배포용
+# ALB 가중치 라우팅(trafficRouting.alb)과 Prometheus 기반 AnalysisTemplate 판정을 수행
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-rollouts
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://argoproj.github.io/argo-helm'
+    chart: argo-rollouts
+    # 2.x 최신 안정 버전 자동 추적 (다른 스택처럼 고정하려면 특정 버전으로 교체)
+    targetRevision: 2.x
+    helm:
+      values: |
+        controller:
+          nodeSelector:
+            role: infra
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "infra"
+              effect: "NoSchedule"
+        dashboard:
+          enabled: false
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: argo-rollouts
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true   # Rollout CRD가 커서 client-side apply 시 annotation 크기 초과 방지
