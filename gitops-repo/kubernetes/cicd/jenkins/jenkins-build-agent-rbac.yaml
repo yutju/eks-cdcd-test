@@ -4,19 +4,91 @@ metadata:
   name: jenkins-build-agent
   namespace: jenkins-build
   annotations:
-    
     eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/his-main-jenkins-agent-role"
 ---
-
+# web-apps-test 네임스페이스: rollout 조회 권한만
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: Role
 metadata:
-  name: jenkins-build-agent-admin-binding
+  name: jenkins-deploy-status-reader
+  namespace: web-apps-test
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-build-agent-test-binding
+  namespace: web-apps-test
 subjects:
-- kind: ServiceAccount
-  name: jenkins-build-agent
-  namespace: jenkins-build
+  - kind: ServiceAccount
+    name: jenkins-build-agent
+    namespace: jenkins-build
 roleRef:
-  kind: ClusterRole
-  name: cluster-admin
+  kind: Role
+  name: jenkins-deploy-status-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# web-apps(prod) 네임스페이스: rollout 조회 + 스모크 테스트용 pods/exec 권한
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-deploy-status-reader
+  namespace: web-apps
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-build-agent-prod-binding
+  namespace: web-apps
+subjects:
+  - kind: ServiceAccount
+    name: jenkins-build-agent
+    namespace: jenkins-build
+roleRef:
+  kind: Role
+  name: jenkins-deploy-status-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# [신규] argocd 네임스페이스: ArgoCD Application에 대한 hard-refresh(kubectl patch)를
+# 위해 딱 필요한 두 Application(app-service-test, app-service-prod)에만
+# get/patch 권한 부여. argocd 전체를 열어주는 게 아니라 resourceNames로 정확히 제한함.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-argocd-refresh
+  namespace: argocd
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    resourceNames: ["app-service-test", "app-service-prod"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-build-agent-argocd-refresh-binding
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: jenkins-build-agent
+    namespace: jenkins-build
+roleRef:
+  kind: Role
+  name: jenkins-argocd-refresh
   apiGroup: rbac.authorization.k8s.io

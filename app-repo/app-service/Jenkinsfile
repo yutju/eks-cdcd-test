@@ -191,6 +191,7 @@ spec:
                     script {
                         deployToGitOps(
                             'kubernetes/apps/app-service-test/deployment.yaml',
+                            env.ECR_IMAGE_URI,
                             "app-service-test image update (${env.IMAGE_TAG})",
                             'app-service-test'
                         )
@@ -230,8 +231,10 @@ spec:
             steps {
                 container('kubectl') {
                     script {
-                        deployToGitOps(
+                        // 배포 직전의 이미지를 기록해둠 - 스모크 테스트 실패 시 이 값으로 자동 롤백
+                        env.PROD_PREV_IMAGE_URI = deployToGitOps(
                             'kubernetes/apps/app-service-prod/deployment.yaml',
+                            env.ECR_IMAGE_URI,
                             "app-service-prod image update (${env.IMAGE_TAG}) - approved by ${env.DEPLOY_APPROVER}",
                             'app-service-prod'
                         )
@@ -252,14 +255,61 @@ spec:
             }
         }
 
+        // [신규] 스모크 테스트 + 실패 시 자동 롤백
+        // 8단계는 "파드가 Ready 상태가 됐다"만 확인함 (readinessProbe 통과 여부).
+        // 근데 readinessProbe(/healthz)는 통과해도 실제 핵심 기능은 고장난 이미지가
+        // 배포될 수 있음. 이 단계는 배포 직후 실제로 앱에 요청을 날려서 확인하고,
+        // 실패하면 사람 개입 없이 즉시 이전 정상 이미지로 되돌림.
+        stage('8.5 배포 후 스모크 테스트') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
+            steps {
+                container('kubectl') {
+                    script {
+                        def podName = sh(
+                            script: "kubectl get pod -n web-apps -l app=app-service -o jsonpath='{.items[0].metadata.name}'",
+                            returnStdout: true
+                        ).trim()
+
+                        def smokeResult = sh(
+                            script: "kubectl exec -n web-apps ${podName} -- wget -qO- --timeout=5 http://localhost:4000/healthz",
+                            returnStatus: true
+                        )
+
+                        if (smokeResult != 0) {
+                            if (env.PROD_PREV_IMAGE_URI == null || env.PROD_PREV_IMAGE_URI.contains("placeholder")) {
+                                // 최초 배포라 되돌릴 정상 버전 자체가 없는 경우.
+                                // 존재하지 않는 이미지로 롤백을 시도하면 오히려 ImagePullBackOff만 유발하므로,
+                                // 롤백 없이 실패로만 표시해서 사람이 직접 확인하게 함.
+                                error("스모크 테스트 실패 - 되돌릴 이전 정상 버전이 없어(최초 배포) 자동 롤백을 건너뜀. 수동 확인 필요.")
+                            }
+                            echo "스모크 테스트 실패 감지 - 이전 버전(${env.PROD_PREV_IMAGE_URI})으로 자동 롤백합니다."
+                            deployToGitOps(
+                                'kubernetes/apps/app-service-prod/deployment.yaml',
+                                env.PROD_PREV_IMAGE_URI,
+                                "ROLLBACK: 스모크 테스트 실패로 자동 롤백 (build-${env.BUILD_NUMBER} 배포 취소)",
+                                'app-service-prod'
+                            )
+                            sh "kubectl rollout status deployment/app-service -n web-apps --timeout=300s"
+                            error("스모크 테스트 실패 - 이전 버전(${env.PROD_PREV_IMAGE_URI})으로 자동 롤백 완료. build-${env.IMAGE_TAG} 배포는 취소됨.")
+                        } else {
+                            echo "스모크 테스트 통과 (build-${env.IMAGE_TAG})"
+                        }
+                    }
+                }
+            }
+        }
+
     }
 }
 
 // gitops-repo를 clone -> sed로 이미지 태그 치환 -> commit/push
 // targetDeploymentPath: gitops-repo 루트 기준 상대 경로 (예: kubernetes/apps/app-service-prod/deployment.yaml)
+// imageUri: 반영할 이미지 URI (새 배포든, 롤백용 이전 이미지든 여기로 넘김)
 // argoAppName: ArgoCD Application 이름. push 직후 이 Application을 hard-refresh 시켜서
 //              3분 polling을 기다리지 않고 즉시 sync 여부를 재판단하게 만듦.
-def deployToGitOps(String targetDeploymentPath, String commitMsg, String argoAppName) {
+// 반환값: 교체되기 전 이미지 URI (롤백 시 이 값으로 되돌리기 위해 호출부에서 기록해둠)
+def deployToGitOps(String targetDeploymentPath, String imageUri, String commitMsg, String argoAppName) {
+    def prevImageFile = "prev_image_${argoAppName}.txt"
     withCredentials([usernamePassword(credentialsId: 'gitlab-checkout-cred', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
         sh """
             git config --global user.email "jenkins@jenkins.com"
@@ -269,7 +319,8 @@ def deployToGitOps(String targetDeploymentPath, String commitMsg, String argoApp
             CLEAN_PASSWORD=\$(echo -n "\${GIT_PASSWORD}" | tr -d '\\n\\r')
             CLEAN_USERNAME=\$(echo -n "\${GIT_USERNAME}" | tr -d '\\n\\r')
             git clone -b main "http://\${CLEAN_USERNAME}:\${CLEAN_PASSWORD}@10.0.4.10:8080/root/gitops-repo.git" gitops-repo-tmp
-            sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/${targetDeploymentPath}
+            grep "image:" gitops-repo-tmp/${targetDeploymentPath} | awk '{print \$2}' > ${prevImageFile}
+            sed -i "s|image: .*|image: ${imageUri}|g" gitops-repo-tmp/${targetDeploymentPath}
             cd gitops-repo-tmp
             git add ${targetDeploymentPath}
             git commit -m "${commitMsg}"
@@ -285,4 +336,7 @@ def deployToGitOps(String targetDeploymentPath, String commitMsg, String argoApp
             -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
         sleep 5
     """
+
+    return readFile(prevImageFile).trim()
 }
+

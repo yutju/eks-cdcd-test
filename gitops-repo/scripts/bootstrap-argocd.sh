@@ -73,6 +73,7 @@ echo "[6/6] 프라이빗 GitLab 인증키 및 Application(App of Apps) 배포 �
 SECRET_REPO="kubernetes/cicd/argocd/argocd-repo-secret.yaml"
 SECRET_GITLAB="kubernetes/cicd/jenkins/gitlab-api-secret.yaml"
 SECRET_JENKINS="kubernetes/cicd/jenkins/jenkins-secret.yaml"
+SECRET_GRAFANA_SMTP="kubernetes/cicd/monitoring/grafana-smtp-secret.yaml"
 # 🌟 프로메테우스 별칭 파일 경로 추가
 PROMETHEUS_ALIAS="kubernetes/cicd/monitoring/prometheus-alias.yaml"
 APP_YAML="kubernetes/cicd/argocd/bootstrap.yaml"
@@ -83,7 +84,8 @@ if [ -f "$APP_YAML" ]; then
     [ -f "$SECRET_REPO" ] && kubectl apply -f "$SECRET_REPO"
     [ -f "$SECRET_GITLAB" ] && kubectl apply -f "$SECRET_GITLAB"
     [ -f "$SECRET_JENKINS" ] && kubectl apply -f "$SECRET_JENKINS"
-    
+    [ -f "$SECRET_GRAFANA_SMTP" ] && kubectl apply -f "$SECRET_GRAFANA_SMTP"
+
     # 🌟 프로메테우스 별칭 서비스 배포 실행 추가
     [ -f "$PROMETHEUS_ALIAS" ] && kubectl apply -f "$PROMETHEUS_ALIAS"
 

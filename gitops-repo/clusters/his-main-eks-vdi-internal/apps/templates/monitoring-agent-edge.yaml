@@ -84,4 +84,13 @@ spec:
     syncOptions:
       - ServerSideApply=true
       - CreateNamespace=true
+  # Prometheus Operator가 PrometheusAgent CR의 status를 계속 갱신하면서
+  # 실제로는 무해한데도 계속 OutOfSync로 표시되던 것을 무시하도록 처리.
+  # (argocd app diff 결과 실제 차이 없음을 확인함)
+  ignoreDifferences:
+    - group: monitoring.coreos.com
+      kind: PrometheusAgent
+      jsonPointers:
+        - /status
+
 

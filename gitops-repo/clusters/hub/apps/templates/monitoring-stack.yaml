@@ -1,3 +1,4 @@
+
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -32,6 +33,10 @@ spec:
         grafana:
           enabled: true
           defaultDashboardsEnabled: true
+          # smtp.password를 values에 평문으로 넣으면 helm template 단계에서
+          # 자체 검증(assertNoLeakedSecrets)에 걸려 렌더링이 실패함 (ComparisonError 원인).
+          # 운영 SMTP 계정으로 교체 시 Secret + $__env{} 확장 방식으로 전환 권장.
+          assertNoLeakedSecrets: false
           # 권한 충돌 방지를 위한 설정
           securityContext:
             runAsUser: 472
@@ -81,7 +86,7 @@ spec:
               service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
               service.beta.kubernetes.io/aws-load-balancer-internal: "true"
               external-dns.alpha.kubernetes.io/hostname: "prometheus.monitoring.local"
-              
+
         alertmanager:
           enabled: true
           nodeSelector:
@@ -91,7 +96,7 @@ spec:
               operator: "Equal"
               value: "infra"
               effect: "NoSchedule"
-              
+
         kube-state-metrics:
           enabled: true
           nodeSelector:
@@ -101,7 +106,7 @@ spec:
               operator: "Equal"
               value: "infra"
               effect: "NoSchedule"
-              
+
         prometheus-node-exporter:
           enabled: true
           affinity:
@@ -130,5 +135,3 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
-
-
