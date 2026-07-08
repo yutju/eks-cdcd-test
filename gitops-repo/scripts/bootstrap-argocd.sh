@@ -15,6 +15,8 @@ kubectl apply -f kubernetes/namespaces/jenkins-build-ns.yaml
 kubectl apply -f kubernetes/namespaces/apps-ns.yaml
 kubectl apply -f kubernetes/namespaces/monitoring-ns.yaml
 kubectl apply -f kubernetes/namespaces/security-ns.yaml
+# openemr 시크릿 선적용을 위해 his-emr 네임스페이스도 미리 생성
+kubectl apply -f kubernetes/apps/openemr/namespace.yaml
 kubectl apply -f kubernetes/cicd/jenkins/jenkins-rbac.yaml
 # Step 2: CRD(문법) 선행 주입
 echo "[2/6] ArgoCD 확장 문법(CRD) 클러스터에 주입 중..."
@@ -60,6 +62,9 @@ SECRET_JENKINS="kubernetes/cicd/jenkins/jenkins-secret.yaml"
 SECRET_GRAFANA_SMTP="kubernetes/cicd/monitoring/grafana-smtp-secret.yaml"
 # app-service 애플리케이션 환경변수 시크릿 (web-apps / web-apps-test 두 네임스페이스분 포함)
 SECRET_APP_SERVICE="kubernetes/apps/app-service/app-service-secret.yaml"
+# openemr 시크릿 (DB 접속 env + sqlconf.php 파일)
+SECRET_OPENEMR_DB="kubernetes/apps/openemr/db-secret.yaml"
+SECRET_OPENEMR_SQLCONF="kubernetes/apps/openemr/sqlconf-secret.yaml"
 # 프로메테우스 별칭 파일 경로
 PROMETHEUS_ALIAS="kubernetes/cicd/monitoring/prometheus-alias.yaml"
 APP_YAML="kubernetes/cicd/argocd/bootstrap.yaml"
@@ -70,6 +75,8 @@ if [ -f "$APP_YAML" ]; then
     [ -f "$SECRET_JENKINS" ] && kubectl apply -f "$SECRET_JENKINS"
     [ -f "$SECRET_GRAFANA_SMTP" ] && kubectl apply -f "$SECRET_GRAFANA_SMTP"
     [ -f "$SECRET_APP_SERVICE" ] && kubectl apply -f "$SECRET_APP_SERVICE"
+    [ -f "$SECRET_OPENEMR_DB" ] && kubectl apply -f "$SECRET_OPENEMR_DB"
+    [ -f "$SECRET_OPENEMR_SQLCONF" ] && kubectl apply -f "$SECRET_OPENEMR_SQLCONF"
     # 프로메테우스 별칭 서비스 배포 실행
     [ -f "$PROMETHEUS_ALIAS" ] && kubectl apply -f "$PROMETHEUS_ALIAS"
     echo "기존 인증 정보(gitops-repo-creds) 레이블 업데이트 중..."
