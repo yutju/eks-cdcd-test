@@ -34,7 +34,9 @@ roleRef:
   name: jenkins-deploy-status-reader
   apiGroup: rbac.authorization.k8s.io
 ---
-# web-apps(prod) 네임스페이스: rollout 조회 + 스모크 테스트용 pods/exec 권한
+# web-apps(prod) 네임스페이스: 카나리 상태 확인용 권한
+# [카나리 추가] kubectl argo rollouts status가 Rollout/AnalysisRun/Experiment/
+# ReplicaSet을 watch하므로 argoproj.io 리소스 + replicasets 조회 권한 필요
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -42,7 +44,10 @@ metadata:
   namespace: web-apps
 rules:
   - apiGroups: ["apps"]
-    resources: ["deployments"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["rollouts", "rollouts/status", "analysisruns", "experiments"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods", "pods/log"]

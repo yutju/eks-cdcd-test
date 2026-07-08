@@ -3,16 +3,35 @@ kind: Application
 metadata:
   name: external-secrets
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"   # CRD가 먼저 생겨야 하므로 앞 wave
 spec:
   project: default
   source:
     repoURL: 'https://charts.external-secrets.io'
     chart: external-secrets
     targetRevision: 0.9.19
+    helm:
+      values: |
+        installCRDs: true
+        serviceAccount:
+          name: external-secrets
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/his-main-external-secrets-role"
+        nodeSelector: { role: infra }
+        tolerations:
+          - { key: dedicated, operator: Equal, value: infra, effect: NoSchedule }
+        webhook:
+          nodeSelector: { role: infra }
+          tolerations:
+            - { key: dedicated, operator: Equal, value: infra, effect: NoSchedule }
+        certController:
+          nodeSelector: { role: infra }
+          tolerations:
+            - { key: dedicated, operator: Equal, value: infra, effect: NoSchedule }
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: external-secrets
   syncPolicy:
     automated: { prune: true, selfHeal: true }
-    syncOptions:
-      - CreateNamespace=true
+    syncOptions: [CreateNamespace=true]

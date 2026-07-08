@@ -1,4 +1,4 @@
-~                                                                                                          pipeline {
+pipeline {
     agent {
         kubernetes {
             yaml """
@@ -325,3 +325,4 @@ def deployToGitOps(String targetDeploymentPath, String imageUri, String commitMs
 
     return readFile(prevImageFile).trim()
 }
+

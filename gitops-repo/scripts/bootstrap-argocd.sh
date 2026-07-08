@@ -15,8 +15,6 @@ kubectl apply -f kubernetes/namespaces/jenkins-build-ns.yaml
 kubectl apply -f kubernetes/namespaces/apps-ns.yaml
 kubectl apply -f kubernetes/namespaces/monitoring-ns.yaml
 kubectl apply -f kubernetes/namespaces/security-ns.yaml
-# openemr 시크릿 선적용을 위해 his-emr 네임스페이스도 미리 생성
-kubectl apply -f kubernetes/apps/openemr/namespace.yaml
 kubectl apply -f kubernetes/cicd/jenkins/jenkins-rbac.yaml
 # Step 2: CRD(문법) 선행 주입
 echo "[2/6] ArgoCD 확장 문법(CRD) 클러스터에 주입 중..."
@@ -53,34 +51,30 @@ if [ $? -ne 0 ]; then
     echo "에러: 제한 시간 내에 ArgoCD 서버 파드가 정상 가동되지 않았습니다."
     exit 1
 fi
-echo "ArgoCD 핵심 서버 기동 완료"
-# Step 6: 프라이빗 인증키 및 앱 주문서 연동
-echo "[6/6] 프라이빗 GitLab 인증키 및 Application(App of Apps) 배포 주문서 등록 중..."
-SECRET_REPO="kubernetes/cicd/argocd/argocd-repo-secret.yaml"
-SECRET_GITLAB="kubernetes/cicd/jenkins/gitlab-api-secret.yaml"
-SECRET_JENKINS="kubernetes/cicd/jenkins/jenkins-secret.yaml"
-SECRET_GRAFANA_SMTP="kubernetes/cicd/monitoring/grafana-smtp-secret.yaml"
-# app-service 애플리케이션 환경변수 시크릿 (web-apps / web-apps-test 두 네임스페이스분 포함)
-SECRET_APP_SERVICE="kubernetes/apps/app-service/app-service-secret.yaml"
-# openemr 시크릿 (DB 접속 env + sqlconf.php 파일)
-SECRET_OPENEMR_DB="kubernetes/apps/openemr/db-secret.yaml"
-SECRET_OPENEMR_SQLCONF="kubernetes/apps/openemr/sqlconf-secret.yaml"
-# 프로메테우스 별칭 파일 경로
-PROMETHEUS_ALIAS="kubernetes/cicd/monitoring/prometheus-alias.yaml"
 APP_YAML="kubernetes/cicd/argocd/bootstrap.yaml"
 if [ -f "$APP_YAML" ]; then
     echo "시크릿 및 인프라 매니페스트 배포 시작..."
-    [ -f "$SECRET_REPO" ] && kubectl apply -f "$SECRET_REPO"
-    [ -f "$SECRET_GITLAB" ] && kubectl apply -f "$SECRET_GITLAB"
-    [ -f "$SECRET_JENKINS" ] && kubectl apply -f "$SECRET_JENKINS"
-    [ -f "$SECRET_GRAFANA_SMTP" ] && kubectl apply -f "$SECRET_GRAFANA_SMTP"
-    [ -f "$SECRET_APP_SERVICE" ] && kubectl apply -f "$SECRET_APP_SERVICE"
-    [ -f "$SECRET_OPENEMR_DB" ] && kubectl apply -f "$SECRET_OPENEMR_DB"
-    [ -f "$SECRET_OPENEMR_SQLCONF" ] && kubectl apply -f "$SECRET_OPENEMR_SQLCONF"
-    # 프로메테우스 별칭 서비스 배포 실행
-    [ -f "$PROMETHEUS_ALIAS" ] && kubectl apply -f "$PROMETHEUS_ALIAS"
-    echo "기존 인증 정보(gitops-repo-creds) 레이블 업데이트 중..."
-    kubectl label secret gitops-repo-creds argocd.argoproj.io/secret-type=repository -n argocd --overwrite
+    
+    echo "AWS SSM에서 Git 저장소 자격 증명 동적 주입 중..."
+    REPO_CREDS_JSON=$(aws ssm get-parameter --name /his-main/argocd/gitops-repo-creds --with-decryption --query "Parameter.Value" --output text 2>/dev/null)
+    if [ -n "$REPO_CREDS_JSON" ] && [ "$REPO_CREDS_JSON" != "null" ]; then
+        REPO_URL=$(echo "$REPO_CREDS_JSON" | jq -r .url)
+        REPO_USER=$(echo "$REPO_CREDS_JSON" | jq -r .username)
+        REPO_PASS=$(echo "$REPO_CREDS_JSON" | jq -r .password)
+
+        kubectl create secret generic gitops-repo-creds \
+          -n argocd \
+          --from-literal=url="$REPO_URL" \
+          --from-literal=username="$REPO_USER" \
+          --from-literal=password="$REPO_PASS" \
+          --from-literal=type="git" \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        kubectl label secret gitops-repo-creds argocd.argoproj.io/secret-type=repository -n argocd --overwrite
+    else
+        echo "경고: SSM에서 Git 자격 증명을 가져오지 못했습니다. 수동 설정이 필요할 수 있습니다."
+    fi
+
     kubectl delete networkpolicy --all -n argocd > /dev/null 2>&1
     echo "애플리케이션 주문서(bootstrap.yaml) 배포..."
     kubectl apply -f "$APP_YAML"
@@ -93,3 +87,4 @@ else
     echo "에러: 필수 매니페스트 파일($APP_YAML)이 존재하지 않습니다."
     exit 1
 fi
+
