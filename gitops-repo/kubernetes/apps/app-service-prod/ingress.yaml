@@ -2,24 +2,25 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: app-service-ingress
-  namespace: web-apps   # Deployment/Service와 동일한 네임스페이스로 통일
+  namespace: web-apps
   annotations:
     kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-    # HTTPS 필요 시 아래 3줄 주석 해제 + ACM 인증서 ARN 채우기
-    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
-    # alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-northeast-2:278584440977:certificate/xxxx"
-    # alb.ingress.kubernetes.io/ssl-redirect: '443'
+    # Name 태그 기반 서브넷 명시 지정 (클러스터 재생성 대응)
+    alb.ingress.kubernetes.io/subnets: his-main-public-a, his-main-public-c
+    # HTTPS 활성화 + HTTP→HTTPS 리다이렉트
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-northeast-2:278584440977:certificate/95618444-55ce-43f6-b0bd-c88d9adbf2eb"
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
 
     # ExternalDNS(퍼블릭 존 담당 인스턴스)가 이 host를 보고
     # Route53 퍼블릭 호스티드존에 자동으로 A(Alias) 레코드를 생성/관리함
-    external-dns.alpha.kubernetes.io/hostname: "prod.your-domain.com"
+    external-dns.alpha.kubernetes.io/hostname: "armymedicalcenter.click"
 spec:
   ingressClassName: alb
   rules:
-  - host: "prod.your-domain.com"   # 실제 상용 도메인으로 변경
+  - host: "armymedicalcenter.click"
     http:
       paths:
       - path: /
@@ -28,7 +29,4 @@ spec:
           service:
             name: app-service   # Rollout의 stableService와 일치해야 함
             port:
-              # [카나리] 고정 포트 대신 use-annotation 사용.
-              # Argo Rollouts가 alb.ingress.kubernetes.io/actions.app-service
-              # annotation을 주입해서 stable/canary 타겟그룹 가중치를 제어함.
               name: use-annotation

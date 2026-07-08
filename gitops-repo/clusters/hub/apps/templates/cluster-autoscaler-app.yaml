@@ -14,7 +14,7 @@ spec:
     helm:
       values: |
         autoDiscovery:
-          clusterName: his-main  # 실제 EKS 클러스터 이름으로 변경
+          clusterName: his-main-eks-devops  # 실제 EKS 클러스터 이름으로 변경
         awsRegion: ap-northeast-2
         # CA는 infra 노드에 배치
         nodeSelector:
