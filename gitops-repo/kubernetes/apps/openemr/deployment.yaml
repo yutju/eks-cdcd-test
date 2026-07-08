@@ -64,9 +64,11 @@ spec:
         - name: php-config
           configMap:
             name: openemr-php-config
+        # [변경] sqlconf.php에 DB 비밀번호가 들어있어 ConfigMap → Secret으로 전환
+        # (gitignored sqlconf-secret.yaml로 관리, git에서 평문 비번 제거)
         - name: openemr-sqlconf
-          configMap:
-            name: openemr-sqlconf
+          secret:
+            secretName: openemr-sqlconf
         - name: sqlconf-rw
           emptyDir: {}
         - name: openemr-config

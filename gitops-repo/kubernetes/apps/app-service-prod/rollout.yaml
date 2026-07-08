@@ -21,6 +21,9 @@ spec:
       containers:
       - name: app-service
         image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/web-service/app-image:build-13
+        envFrom:                          # [추가] 앱 환경변수 주입 (bootstrap으로 apply되는 Secret)
+        - secretRef:
+            name: app-service-secret
         ports:
         - name: http          # PodMonitor가 이 이름으로 /metrics를 스크레이프함
           containerPort: 4000
