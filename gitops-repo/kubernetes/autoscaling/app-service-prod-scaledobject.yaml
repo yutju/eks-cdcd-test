@@ -6,8 +6,10 @@ metadata:
   namespace: web-apps
 spec:
   scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
+    # [카나리] Deployment → Rollout 전환. Rollout도 /scale 서브리소스를
+    # 구현하므로 KEDA가 동일하게 스케일링 가능.
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
     name: app-service
   minReplicaCount: 3
   maxReplicaCount: 10

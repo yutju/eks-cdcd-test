@@ -57,7 +57,7 @@ spec:
           grafana.ini:
             smtp:
               enabled: true
-              host: mail.army.local:587
+              host: mail.army.local:25
               from_address: test@army.local
               from_name: Grafana Alert
               skip_verify: "true"
