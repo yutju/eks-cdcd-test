@@ -20,6 +20,15 @@ RUN npm install --omit=dev
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# [카나리 시연] 빌드 시점 값을 이미지에 굽어 런타임 env로 만든다.
+#  - APP_VERSION : Jenkins가 --build-arg APP_VERSION=$IMAGE_TAG(build-N)로 전달.
+#                  app.js의 /api/version 이 이 값을 반환 → 대시보드에서 stable/canary 빌드 구분.
+#  - FAIL_MODE   : 시나리오2용. true면 앱이 요청 30%를 500으로 반환(불량 빌드).
+#                  Jenkins "Build with Parameters"에서 FAIL_MODE 체크 시 --build-arg로 주입.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+ARG FAIL_MODE=false
+ENV FAIL_MODE=$FAIL_MODE
 # 컨테이너는 root로 띄우지 않음 (EKS 보안 권고)
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 COPY --from=backend-deps /app/node_modules ./node_modules

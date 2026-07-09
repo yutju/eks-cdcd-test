@@ -34,10 +34,32 @@ spec:
         cpu: "1"
       limits:
         memory: "4Gi"
+  # [신규] Trivy 이미지 취약점/시크릿 스캔 전용 컨테이너
+  - name: trivy
+    image: aquasec/trivy:latest
+    command: ["sleep"]
+    args: ["infinity"]
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "200m"
+      limits:
+        memory: "1Gi"
 """
         }
     }
-
+    // [신규] 동시 빌드 금지 — 두 빌드가 동시에 gitops-repo에 push하면
+    // 이미지 태그가 꼬이므로 (build-8/10 혼선 같은 상황 방지)
+    options {
+        disableConcurrentBuilds()
+    }
+    // [시연용] 불량 빌드 토글. 평소(웹훅 자동빌드)엔 false로 정상 빌드,
+    // "Build with Parameters"에서 체크하면 요청 30%를 500으로 내는 이미지를 빌드해서
+    // 카나리 자동 롤백(시나리오 2)을 파이프라인 끝까지 재현할 수 있음.
+    parameters {
+        booleanParam(name: 'FAIL_MODE', defaultValue: false,
+            description: '체크 시 불량 이미지(요청 30% 500) 빌드 → 카나리 분석 실패 → 8단계 자동 롤백 시연')
+    }
     environment {
         GITLAB_API_TOKEN    = credentials('gitlab-token-id')
         GITLAB_URL          = "${env.GITLAB_URL ?: 'http://10.0.4.10:8080'}"
@@ -50,11 +72,8 @@ spec:
     }
 
     // [변경] gitlab() 트리거는 리포지토리 전체 push에 반응해서, openemr/만 바뀌어도
-    // 이 파이프라인이 매번 트리거됨(1.5단계에서 스킵은 되지만 에이전트 파드가 불필요하게 뜸).
-    // GenericTrigger + 경로 필터로 바꿔서, app-service/ 변경이 없으면
-    // 빌드 자체가 아예 시작되지 않게 함.
-    // 주의: JSONPath 추출 결과는 Jenkins Job 설정 화면의 GenericTrigger
-    // "webhook 테스트" 기능으로 실제 GitLab payload에 맞게 한번 검증 필요.
+    // 이 파이프라인이 매번 트리거됨. GenericTrigger + 경로 필터로 app-service/ 변경이
+    // 없으면 빌드 자체가 시작되지 않게 함.
     triggers {
         GenericTrigger(
             genericVariables: [
@@ -91,9 +110,8 @@ spec:
             }
         }
 
-        // [수정] container('kubectl')로 명시. container를 지정하지 않으면
-        // Kubernetes 플러그인 기본 컨테이너(jnlp)에서 실행되어 stage 0에서 설치한
-        // git/aws-cli를 찾지 못해 실패할 수 있음.
+        // [수정] container('kubectl')로 명시. 지정 안 하면 기본 컨테이너(jnlp)에서 실행되어
+        // stage 0에서 설치한 git/aws-cli를 못 찾을 수 있음.
         stage('1. 코드 체크아웃') {
             steps {
                 container('kubectl') {
@@ -102,10 +120,7 @@ spec:
             }
         }
 
-        // [수정] HEAD~1이 없는 경우(첫 커밋, shallow clone depth 부족 등)를 명시적으로 처리.
-        // 기존에는 `|| true`로 삼켜져서 changed가 빈 문자열이 되고,
-        // 그 결과 정상적인 변경 사항도 "변경 없음"으로 오판되어 스킵될 위험이 있었음.
-        // 이제는 비교 기준 커밋이 없으면 안전하게 "빌드 진행"으로 처리함.
+        // [수정] HEAD~1이 없는 경우(첫 커밋/얕은 클론)를 명시적으로 처리.
         stage('1.5 변경 경로 확인') {
             steps {
                 container('kubectl') {
@@ -135,18 +150,26 @@ spec:
             }
         }
 
-        // [수정] error()로 파이프라인을 강제 중단하지 않고 when 조건으로 스킵.
-        // 기존 방식은 error() 호출 시 currentBuild.result가 FAILURE로 재설정되어
-        // 의도한 NOT_BUILT(스킵)가 아니라 "빌드 실패"로 잘못 표시되는 문제가 있었음.
+        // [신규] 시크릿 스캔 — 소스에 하드코딩된 자격증명(비밀번호/토큰/키)이 커밋됐는지 검사.
+        // 발견 시 빌드 차단. 오탐은 app-service/.trivyignore 에 룰 ID 등록으로 예외 처리.
+        stage('1.7 Trivy 시크릿 스캔') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
+            steps {
+                container('trivy') {
+                    sh """
+                        trivy fs --scanners secret --exit-code 1 --no-progress app-service/
+                    """
+                }
+            }
+        }
+
+        // [수정] error()로 중단하지 않고 when 조건으로 스킵 — NOT_BUILT 표시 유지.
         stage('2. GitLab 웹훅 자동 등록') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     script {
                         def gitlabApiBase = "${env.GITLAB_URL}/api/v4"
-                        // -G: --data-urlencode 값들을 POST body가 아니라 URL 쿼리스트링으로 붙임
-                        // (이 GitLab 인스턴스의 hooks API가 body 방식은 안 받아서 쿼리스트링 방식 유지,
-                        //  단 특수문자(? 등)는 -G + --data-urlencode 조합으로 안전하게 인코딩됨)
                         sh """
                             EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_BASE_URL}" || true)
                             if [ -z "\$EXISTING_HOOK" ]; then
@@ -172,13 +195,17 @@ spec:
                     container('kaniko') {
                         def ecrRegistry = "${awsAccountId}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
                         def ecrImageUri = "${ecrRegistry}/${env.ECR_REPO_NAME}:${env.IMAGE_TAG}"
+                        // [시연] build-arg로 (1)버전 태그를 이미지에 굽고(/api/version이 반환 → 대시보드 구분),
+                        //        (2)FAIL_MODE 파라미터를 이미지에 반영(불량 빌드 시연).
                         sh """
                             mkdir -p /kaniko/.docker
                             echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
                             /kaniko/executor \\
                                 --context \$(pwd)/app-service \\
                                 --dockerfile \$(pwd)/app-service/Dockerfile \\
-                                --destination ${ecrImageUri}
+                                --destination ${ecrImageUri} \\
+                                --build-arg APP_VERSION=${env.IMAGE_TAG} \\
+                                --build-arg FAIL_MODE=${params.FAIL_MODE}
                         """
                         env.ECR_IMAGE_URI = ecrImageUri
                     }
@@ -186,8 +213,22 @@ spec:
             }
         }
 
-        // [변경] test 환경을 상시 EC2 배포로 전환하면서, replicas 켜고 끄는 로직 자체가
-        // 필요 없어짐. prod와 동일하게 이미지 태그만 반영하면 됨.
+        // [신규] 취약점 스캔 게이트 — HIGH 이상은 리포트, CRITICAL 있으면 빌드 실패(배포 전 차단).
+        // ECR 인증은 에이전트 SA의 IRSA로 자동 처리.
+        stage('3.5 Trivy 이미지 취약점 스캔') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
+            steps {
+                container('trivy') {
+                    sh """
+                        # 리포트: HIGH 이상 전부 출력 (기록용, 실패 안 함)
+                        trivy image --severity HIGH,CRITICAL --no-progress --exit-code 0 ${env.ECR_IMAGE_URI}
+                        # 게이트: CRITICAL 존재 시 빌드 실패
+                        trivy image --severity CRITICAL --no-progress --exit-code 1 --quiet ${env.ECR_IMAGE_URI}
+                    """
+                }
+            }
+        }
+
         stage('4. GitOps 테스트 환경 반영') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
@@ -204,14 +245,12 @@ spec:
             }
         }
 
-        // [해결됨] ArgoCD sync 타이밍 이슈: deployToGitOps() 안에서 push 직후
-        // 곧바로 해당 Application에 hard-refresh 어노테이션을 걸어서, 3분 polling을
-        // 기다리지 않고 즉시 ArgoCD가 재확인 & sync하도록 강제함.
         stage('5. 테스트 환경 배포 대기') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
-                    sh "kubectl rollout status deployment/app-service -n web-apps-test --timeout=300s"
+                    // [수정] 300s → 600s: 노드 증설(EC2 기동) + 이미지 pull 시간 고려
+                    sh "kubectl rollout status deployment/app-service -n web-apps-test --timeout=600s"
                 }
             }
         }
@@ -220,11 +259,13 @@ spec:
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 script {
-                    // 24시간 내 승인 안 할 시 자동 만료 (파이프라인 Abort)
                     timeout(time: 24, unit: 'HOURS') {
-                        input message: "테스트 환경(web-apps-test) QA가 완료되었습니다. 상용(app-service-prod)에 동일 이미지(${env.IMAGE_TAG})를 배포할까요?",
-                              ok: '배포 진행',
-                              submitterParameter: 'DEPLOY_APPROVER'
+                        // [수정] input 반환값을 받아야 승인자가 기록됨(기존엔 "approved by null")
+                        env.DEPLOY_APPROVER = input(
+                            message: "테스트 환경(web-apps-test) QA가 완료되었습니다. 상용(app-service-prod)에 동일 이미지(${env.IMAGE_TAG})를 배포할까요?",
+                            ok: '배포 진행',
+                            submitterParameter: 'DEPLOY_APPROVER'
+                        )
                     }
                 }
             }
@@ -235,7 +276,7 @@ spec:
             steps {
                 container('kubectl') {
                     script {
-                        // 배포 직전의 이미지를 기록해둠 - 스모크 테스트 실패 시 이 값으로 자동 롤백
+                        // 배포 직전 이미지를 기록 - 카나리 실패 시 이 값으로 자동 롤백
                         env.PROD_PREV_IMAGE_URI = deployToGitOps(
                             'kubernetes/apps/app-service-prod/rollout.yaml',
                             env.ECR_IMAGE_URI,
@@ -247,37 +288,74 @@ spec:
             }
         }
 
-        // [카나리 전환] 기존 8단계(rollout status) + 8.5단계(스모크 테스트+롤백)를 통합 대체.
-        // Rollouts가 10% 트래픽 단계에서 Prometheus 성공률(AnalysisTemplate)로 자동 판정하므로
-        // 파드 하나에 wget 한번 날리던 기존 스모크 테스트보다 강력함.
-        // 분석 실패 시 Rollouts가 즉시 abort하고 트래픽을 stable로 되돌리지만,
-        // git의 desired 이미지는 여전히 새 버전이라 Degraded로 남음 —
-        // GitOps 정합성을 위해 이전 이미지로 revert 커밋까지 수행함.
         stage('8. 카나리 배포 진행 확인 (실패 시 자동 롤백)') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
                     script {
-                        // steps 전체 소요: 분석 ~2.5분 + pause 60초 + 파드 기동 — 여유있게 15분
+                        // [수정 1] 레이스 방지: ArgoCD가 새 이미지를 Rollout에 반영하기 전에
+                        // status를 부르면 "이전 상태의 Healthy"를 성공으로 오판함.
+                        // 새 이미지가 라이브 Rollout spec에 반영될 때까지 대기(최대 3분).
+                        def synced = sh(
+                            script: """
+                                for i in \$(seq 1 36); do
+                                    CURRENT=\$(kubectl get rollout app-service -n web-apps -o jsonpath='{.spec.template.spec.containers[0].image}')
+                                    if [ "\$CURRENT" = "${env.ECR_IMAGE_URI}" ]; then
+                                        echo "새 이미지 반영 확인: \$CURRENT"
+                                        exit 0
+                                    fi
+                                    sleep 5
+                                done
+                                echo "3분 내에 새 이미지가 Rollout에 반영되지 않음 (ArgoCD sync 확인 필요)"
+                                exit 1
+                            """,
+                            returnStatus: true
+                        )
+                        if (synced != 0) {
+                            error("ArgoCD sync 실패 - 새 이미지가 클러스터에 반영되지 않았습니다. ArgoCD 상태를 확인하세요.")
+                        }
+
+                        // 컨트롤러가 카나리 절차를 시작할 시간
+                        sh "sleep 10"
+
+                        // 카나리 완주 대기: 10% → 분석(~2.5분) → 50% → 60초 → 100%
                         def canaryResult = sh(
                             script: "kubectl argo rollouts status app-service -n web-apps --timeout 900s",
                             returnStatus: true
                         )
 
                         if (canaryResult != 0) {
+                            echo "카나리 실패 감지 - 롤백 절차 시작"
+                            // 트래픽 즉시 차단(분석 실패면 이미 abort됐지만, 다른 실패 경로 대비 안전장치)
+                            sh "kubectl argo rollouts abort app-service -n web-apps || true"
+
                             if (env.PROD_PREV_IMAGE_URI == null || env.PROD_PREV_IMAGE_URI.contains("placeholder")) {
                                 error("카나리 실패 - 되돌릴 이전 정상 버전이 없어(최초 배포) git 롤백을 건너뜀. 수동 확인 필요.")
                             }
-                            echo "카나리 분석 실패 감지 - 이전 버전(${env.PROD_PREV_IMAGE_URI})으로 git 롤백합니다."
+
+                            // [수정 2] 롤백 대상 태그가 ECR에 실제 존재하는지 검증.
+                            // ECR 재생성 등으로 이전 태그가 사라진 경우, 없는 태그를 git에 쓰면
+                            // ImagePullBackOff만 유발하므로 롤백 중단하고 수동 개입 요청.
+                            def prevTag = env.PROD_PREV_IMAGE_URI.tokenize(':').last()
+                            def tagExists = sh(
+                                script: "aws ecr describe-images --repository-name ${env.ECR_REPO_NAME} --image-ids imageTag=${prevTag} --region ${env.AWS_REGION} >/dev/null 2>&1",
+                                returnStatus: true
+                            )
+                            if (tagExists != 0) {
+                                error("카나리 실패 + 롤백 불가: 이전 태그(${prevTag})가 ECR에 없습니다. " +
+                                      "트래픽은 abort로 stable에 묶여 있으나 git 정합성 복구는 수동 필요 — " +
+                                      "ECR에 존재하는 태그로 rollout.yaml을 직접 수정하세요.")
+                            }
+
+                            echo "이전 버전(${env.PROD_PREV_IMAGE_URI})으로 git 롤백합니다."
                             deployToGitOps(
                                 'kubernetes/apps/app-service-prod/rollout.yaml',
                                 env.PROD_PREV_IMAGE_URI,
-                                "ROLLBACK: 카나리 분석 실패로 자동 롤백 (${env.IMAGE_TAG} 배포 취소)",
+                                "ROLLBACK: 카나리 실패로 자동 롤백 (${env.IMAGE_TAG} 배포 취소)",
                                 'app-service-prod'
                             )
-                            // revert 커밋이 반영되면 desired == stable이 되어 Rollout이 Healthy로 복귀
                             sh "kubectl argo rollouts status app-service -n web-apps --timeout 300s"
-                            error("카나리 분석 실패 - 이전 버전(${env.PROD_PREV_IMAGE_URI})으로 롤백 완료. ${env.IMAGE_TAG} 배포는 취소됨.")
+                            error("카나리 실패 - 이전 버전(${env.PROD_PREV_IMAGE_URI})으로 롤백 완료. ${env.IMAGE_TAG} 배포는 취소됨.")
                         } else {
                             echo "카나리 배포 성공 - 100% 전환 완료 (${env.IMAGE_TAG})"
                         }
@@ -285,16 +363,11 @@ spec:
                 }
             }
         }
-
     }
 }
 
 // gitops-repo를 clone -> sed로 이미지 태그 치환 -> commit/push
-// targetDeploymentPath: gitops-repo 루트 기준 상대 경로 (예: kubernetes/apps/app-service-prod/deployment.yaml)
-// imageUri: 반영할 이미지 URI (새 배포든, 롤백용 이전 이미지든 여기로 넘김)
-// argoAppName: ArgoCD Application 이름. push 직후 이 Application을 hard-refresh 시켜서
-//              3분 polling을 기다리지 않고 즉시 sync 여부를 재판단하게 만듦.
-// 반환값: 교체되기 전 이미지 URI (롤백 시 이 값으로 되돌리기 위해 호출부에서 기록해둠)
+// 반환값: 교체되기 전 이미지 URI (롤백 시 이 값으로 되돌리기 위해 호출부에서 기록)
 def deployToGitOps(String targetDeploymentPath, String imageUri, String commitMsg, String argoAppName) {
     def prevImageFile = "prev_image_${argoAppName}.txt"
     withCredentials([usernamePassword(credentialsId: 'gitlab-checkout-cred', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
@@ -305,24 +378,26 @@ def deployToGitOps(String targetDeploymentPath, String imageUri, String commitMs
             rm -rf gitops-repo-tmp
             CLEAN_PASSWORD=\$(echo -n "\${GIT_PASSWORD}" | tr -d '\\n\\r')
             CLEAN_USERNAME=\$(echo -n "\${GIT_USERNAME}" | tr -d '\\n\\r')
+            # [보안] set +x: clone URL에 토큰이 포함되므로 명령 echo를 꺼서
+            # 콘솔 로그에 자격증명이 평문으로 찍히는 것을 방지
+            set +x
             git clone -b main "http://\${CLEAN_USERNAME}:\${CLEAN_PASSWORD}@10.0.4.10:8080/root/gitops-repo.git" gitops-repo-tmp
+            set -x
             grep "image:" gitops-repo-tmp/${targetDeploymentPath} | awk '{print \$2}' > ${prevImageFile}
             sed -i "s|image: .*|image: ${imageUri}|g" gitops-repo-tmp/${targetDeploymentPath}
             cd gitops-repo-tmp
             git add ${targetDeploymentPath}
             git commit -m "${commitMsg}"
-            git push origin main
+            # [수정] push 충돌 시 1회 재시도 (그 사이 다른 커밋이 들어온 경우)
+            set +x
+            git push origin main || (git pull --rebase origin main && git push origin main)
+            set -x
         """
     }
-
-    // push만으로는 ArgoCD가 최대 3분(polling 주기) 뒤에나 변경을 감지할 수 있어서,
-    // 바로 다음 stage의 rollout status가 timeout날 위험이 있었음.
-    // hard-refresh 어노테이션을 걸어서 즉시 재비교 + sync를 강제로 유도함.
+    // push 직후 hard-refresh로 ArgoCD가 즉시 재비교 + sync하도록 유도
     sh """
         kubectl patch application ${argoAppName} -n argocd --type merge \
             -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
     """
-
     return readFile(prevImageFile).trim()
 }
-
