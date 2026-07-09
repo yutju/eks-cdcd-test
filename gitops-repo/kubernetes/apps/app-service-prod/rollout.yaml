@@ -28,8 +28,8 @@ spec:
         - name: http          # PodMonitor가 이 이름으로 /metrics를 스크레이프함
           containerPort: 4000
         resources:
-          requests: { cpu: "100m", memory: "128Mi" }
-          limits:   { cpu: "500m", memory: "256Mi" }
+          requests: { cpu: "500m", memory: "256Mi" }
+          limits:   { cpu: "1", memory: "512Mi" }
         readinessProbe:
           httpGet: { path: /healthz, port: 4000 }
           initialDelaySeconds: 5
