@@ -215,15 +215,30 @@ spec:
 
         // [신규] 취약점 스캔 게이트 — HIGH 이상은 리포트, CRITICAL 있으면 빌드 실패(배포 전 차단).
         // ECR 인증은 에이전트 SA의 IRSA로 자동 처리.
+        // [수정] 기본 출력이 모든 package.json을 clean(0)으로 나열해 로그를 도배함 →
+        //   리포트를 파일로 받아 'node-pkg' 요약 라인을 숨기고 실제 HIGH/CRITICAL만 출력.
+        //   게이트는 결과를 버려(exit code만 사용) 두 번째 거대 테이블도 안 뜨게 함.
+        //   시크릿 스캔은 1.7단계에서 했으므로 여기선 --scanners vuln 으로 생략.
         stage('3.5 Trivy 이미지 취약점 스캔') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('trivy') {
                     sh """
-                        # 리포트: HIGH 이상 전부 출력 (기록용, 실패 안 함)
-                        trivy image --severity HIGH,CRITICAL --no-progress --exit-code 0 ${env.ECR_IMAGE_URI}
-                        # 게이트: CRITICAL 존재 시 빌드 실패
-                        trivy image --severity CRITICAL --no-progress --exit-code 1 --quiet ${env.ECR_IMAGE_URI}
+                        # 1) 리포트 생성(실패 안 함) → 파일로
+                        trivy image --severity HIGH,CRITICAL --no-progress --scanners vuln \\
+                            --exit-code 0 ${env.ECR_IMAGE_URI} > trivy-report.txt 2>&1 || true
+                        echo "───── Trivy HIGH/CRITICAL 취약점 상세 ─────"
+                        # 맨 위 'Report Summary'(수백 개 clean 패키지 목록)는 건너뛰고
+                        # 실제 취약점 상세 테이블('Total:' 줄부터)만 출력
+                        if grep -q "Total:" trivy-report.txt; then
+                            sed -n '/Total:/,\$p' trivy-report.txt
+                        else
+                            echo "HIGH/CRITICAL 취약점 없음"
+                        fi
+                        echo "────────────────────────────────────────────"
+                        # 2) 게이트: CRITICAL 존재 시 빌드 실패 (출력은 버리고 exit code만 사용)
+                        trivy image --severity CRITICAL --no-progress --scanners vuln \\
+                            --exit-code 1 --quiet ${env.ECR_IMAGE_URI} > /dev/null 2>&1
                     """
                 }
             }
