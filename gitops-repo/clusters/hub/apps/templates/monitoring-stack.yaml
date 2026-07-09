@@ -62,7 +62,7 @@ spec:
               from_address: test@army.local
               from_name: Grafana Alert
               skip_verify: "true"
-              ehlo_identity: army.local
+              ehlo_identity: mail.army.local
 
         prometheus:
           enabled: true

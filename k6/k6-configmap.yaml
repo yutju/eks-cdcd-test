@@ -10,16 +10,20 @@ data:
 
     export const options = {
       stages: [
-        { duration: '1m', target: 700 },   // 1분간 50 VU까지 증가
-        { duration: '3m', target: 700 },   // 3분간 50 VU 유지
-        { duration: '1m', target: 0 },    // 1분간 0으로 감소
+        { duration: '1m', target: 100 },   // 워밍업
+        { duration: '2m', target: 300 },   // 증가 — KEDA 스케일아웃 유도
+        { duration: '3m', target: 300 },   // 유지 — CA 노드 증설까지 확인
+        { duration: '1m', target: 0 },     // 감소
       ],
+      thresholds: {
+        http_req_failed: ['rate<0.01'],    // 에러율 1% 미만
+        http_req_duration: ['p(95)<500'],  // p95 500ms 미만
+      },
     };
 
     export default function () {
-      const res = http.get('http://hello-k3s-service.dev-apps.svc.cluster.local');
-      check(res, {
-        'status is 200': (r) => r.status === 200,
-      });
+      // prod app-service를 클러스터 내부 경로로 타격
+      const res = http.get('http://app-service.web-apps.svc.cluster.local/');
+      check(res, { 'status is 200': (r) => r.status === 200 });
       sleep(0.1);
     }

@@ -14,7 +14,7 @@ spec:
     helm:
       values: |
         autoDiscovery:
-          clusterName: his-main-eks-devops  # 실제 EKS 클러스터 이름으로 변경
+          clusterName: his-main-eks-devops
         awsRegion: ap-northeast-2
         # CA는 infra 노드에 배치
         nodeSelector:
@@ -27,11 +27,11 @@ spec:
         rbac:
           serviceAccount:
             annotations:
-              # IRSA: CA가 ASG를 제어할 수 있는 IAM Role ARN으로 변경
+              # IRSA: CA가 ASG를 제어할 수 있는 IAM Role ARN
               eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/his-main-cluster-autoscaler-role"
         extraArgs:
-          # his-main-ng-service 노드그룹만 스케일링 대상으로 지정
-          node-group-auto-discovery: "asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/his-main"
+          # node-group-auto-discovery는 chart가 autoDiscovery.clusterName으로
+          # 자동 생성하므로 수동 지정 제거 (수동값이 잘못된 클러스터명을 덮어쓰던 문제 수정)
           scale-down-enabled: "true"
           scale-down-delay-after-add: "2m"
           scale-down-unneeded-time: "5m"
@@ -45,4 +45,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-

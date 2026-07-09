@@ -11,7 +11,6 @@ metadata:
     alb.ingress.kubernetes.io/subnets: his-main-public-a, his-main-public-c
     # HTTPS 활성화 + HTTP→HTTPS 리다이렉트
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
-    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-northeast-2:278584440977:certificate/95618444-55ce-43f6-b0bd-c88d9adbf2eb"
     alb.ingress.kubernetes.io/ssl-redirect: '443'
 
     # ExternalDNS(퍼블릭 존 담당 인스턴스)가 이 host를 보고
@@ -19,6 +18,9 @@ metadata:
     external-dns.alpha.kubernetes.io/hostname: "armymedicalcenter.click"
 spec:
   ingressClassName: alb
+  tls:
+  - hosts:
+    - "armymedicalcenter.click"
   rules:
   - host: "armymedicalcenter.click"
     http:

@@ -29,6 +29,23 @@ app.get('/readyz', (req, res) => res.status(200).json({ status: 'ready' }));
 // [카나리] Prometheus 스크레이프 엔드포인트.
 // 맨 아래 SPA catch-all(app.get('*'))보다 앞에 있어야 index.html이 아닌 메트릭이 응답됨.
 app.get('/metrics', metricsHandler);
+
+// ─────────────────────────────────────────────────────────────
+// [카나리 시연용] 버전 표시 + 실패 주입 엔드포인트 (DB 비의존, 메트릭 계측 대상)
+//  - APP_VERSION : 응답에 배포 버전을 실어 트래픽 분할을 눈으로 확인 (stable=v1, canary=v2)
+//  - FAIL_MODE=true : 요청의 30%를 500으로 반환 → 카나리 파드의 비-5xx 성공률이
+//                     95% 밑으로 떨어져 AnalysisTemplate이 Failed 판정 → Rollouts 자동 abort.
+//    (readinessProbe(/healthz)는 계속 200이라, 기존 롤링업데이트였으면 100% 배포됐을
+//     "probe는 통과하지만 실제로는 불량인 버전"을 카나리가 잡아내는 시나리오)
+//  시연 종료 후 이 블록은 남겨둬도 무해함(APP_VERSION/FAIL_MODE 미설정 시 항상 200/v1).
+app.get('/api/version', (req, res) => {
+  if (process.env.FAIL_MODE === 'true' && Math.random() < 0.3) {
+    return res.status(500).json({ error: 'demo failure', version: process.env.APP_VERSION || 'v1' });
+  }
+  res.json({ version: process.env.APP_VERSION || 'v1' });
+});
+// ─────────────────────────────────────────────────────────────
+
 // 프론트엔드(React)가 같은 서버에서 서빙되므로, API는 전부 /api 아래로 모아서
 // 프론트 페이지 경로(/health, /board, /medical 등)와 절대 겹치지 않게 합니다.
 app.use('/api/auth', authRoutes);
@@ -80,3 +97,4 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`Patient portal API listening on ${PORT}`));
 module.exports = { app, server };
+
