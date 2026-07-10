@@ -4,3 +4,13 @@ metadata:
   name: dev-apps
   labels:
     env: development
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web-apps
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web-apps-test

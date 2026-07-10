@@ -24,8 +24,24 @@ spec:
     image: gcr.io/kaniko-project/executor:debug
     command: ["sleep"]
     args: ["infinity"]
+  # [신규] Trivy 시크릿/이미지 취약점 스캔 전용 컨테이너
+  - name: trivy
+    image: aquasec/trivy:latest
+    command: ["sleep"]
+    args: ["infinity"]
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "200m"
+      limits:
+        memory: "1Gi"
 """
         }
+    }
+
+    // [신규] 동시 빌드 금지 — 두 빌드가 동시에 gitops-repo에 push하면 꼬이므로
+    options {
+        disableConcurrentBuilds()
     }
 
     environment {
@@ -37,10 +53,11 @@ spec:
         AWS_REGION          = "ap-northeast-2"
         ECR_REPO_NAME       = "openemr"
         IMAGE_TAG           = "${BUILD_NUMBER}"
+        // [DR] ACR 자격증명 SSM 파라미터 경로 (login_server/username/password)
+        ACR_SSM_PREFIX      = "/his-main/acr"
     }
 
-    // [변경] app-service/만 바뀌어도 이 파이프라인이 트리거되던 문제를 막기 위해
-    // GenericTrigger + 경로 필터로 교체. openemr/ 변경 없으면 빌드 자체가 시작 안 됨.
+    // [변경] openemr/ 변경 없으면 빌드 자체가 시작 안 됨
     triggers {
         GenericTrigger(
             genericVariables: [
@@ -73,8 +90,6 @@ spec:
             }
         }
 
-        // [수정] container('kubectl')로 명시. container 미지정 시 기본 컨테이너(jnlp)에서
-        // 실행되어 stage 0에서 설치한 git/aws-cli를 찾지 못해 실패할 수 있음.
         stage('1. 코드 체크아웃') {
             steps {
                 container('kubectl') {
@@ -83,9 +98,6 @@ spec:
             }
         }
 
-        // [수정] HEAD~1이 없는 경우(첫 커밋, shallow clone depth 부족 등)를 명시적으로 처리.
-        // 비교 기준 커밋이 없으면 안전하게 "빌드 진행"으로 처리하여
-        // 정상 변경 사항이 조용히 스킵되는 것을 방지함.
         stage('1.5 변경 경로 확인') {
             steps {
                 container('kubectl') {
@@ -115,9 +127,19 @@ spec:
             }
         }
 
-        // [수정] error() 대신 when 조건으로 스킵 처리.
-        // 기존 방식은 error() 호출 시 currentBuild.result가 FAILURE로 재설정되어
-        // 의도한 NOT_BUILT(스킵)가 아니라 "빌드 실패"로 잘못 표시되는 문제가 있었음.
+        // [신규] 시크릿 스캔 — 소스(openemr/)에 하드코딩된 자격증명이 커밋됐는지 검사.
+        // 발견 시 빌드 차단. 오탐은 openemr/.trivyignore 에 룰 ID 등록으로 예외 처리.
+        stage('1.7 Trivy 시크릿 스캔') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
+            steps {
+                container('trivy') {
+                    sh """
+                        trivy fs --scanners secret --exit-code 1 --no-progress openemr/
+                    """
+                }
+            }
+        }
+
         stage('2. GitLab 웹훅 자동 등록') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
@@ -138,34 +160,102 @@ spec:
             }
         }
 
-        // [참고] 별도 수정 필요: app-repo/openemr/Dockerfile이 아직 존재하지 않음.
-        // 이 스테이지는 해당 Dockerfile이 없으면 kaniko executor 단계에서 바로 실패함.
-        stage('3. Docker Image Build & ECR Push (Kaniko)') {
+        // [DR 통합] 한 번 빌드로 AWS ECR + Azure ACR 동시 push (Kaniko 멀티 목적지).
+        //   - ECR : ecr-login 헬퍼(credHelpers)로 인증 (kaniko debug 이미지에 내장)
+        //   - ACR : SSM에 보관된 admin 자격증명으로 static basic auth
+        //   ※ ACR은 폐쇄망이라, 이 에이전트(AWS VPC 내 EKS)에서만 도달 가능해야 함
+        //   ※ openemr/Dockerfile 이 존재해야 빌드됨
+        stage('3. Docker Image Build & Multi-Registry Push (ECR + Azure ACR)') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 script {
-                    def awsAccountId = ""
+                    def awsAccountId  = ''
+                    def acrLoginServer = ''
+                    def ecrRegistry    = ''
+
                     container('kubectl') {
-                        awsAccountId = sh(script: "aws sts get-caller-identity --query 'Account' --output text", returnStdout: true).trim()
+                        awsAccountId   = sh(script: "aws sts get-caller-identity --query 'Account' --output text", returnStdout: true).trim()
+                        acrLoginServer = sh(script: "aws ssm get-parameter --name '${env.ACR_SSM_PREFIX}/login_server' --query 'Parameter.Value' --output text", returnStdout: true).trim()
+                        ecrRegistry    = "${awsAccountId}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+
+                        // ACR 자격증명(username/password)을 SSM에서 꺼내 kaniko용 docker config 생성.
+                        // set +x 로 비밀번호가 콘솔 로그에 찍히지 않게 함.
+                        sh """
+                            set +x
+                            ACR_USERNAME=\$(aws ssm get-parameter --name '${env.ACR_SSM_PREFIX}/username' --query 'Parameter.Value' --output text)
+                            ACR_PASSWORD=\$(aws ssm get-parameter --name '${env.ACR_SSM_PREFIX}/password' --with-decryption --query 'Parameter.Value' --output text)
+                            ACR_AUTH=\$(printf '%s:%s' "\$ACR_USERNAME" "\$ACR_PASSWORD" | base64 | tr -d '\\n')
+                            printf '{"credHelpers":{"%s":"ecr-login"},"auths":{"%s":{"auth":"%s"}}}' \\
+                                "${ecrRegistry}" "${acrLoginServer}" "\$ACR_AUTH" > "\$(pwd)/kaniko-docker-config.json"
+                            set -x
+                            echo "docker config 생성 완료 (ECR: ${ecrRegistry}, ACR: ${acrLoginServer})"
+                        """
                     }
+
                     container('kaniko') {
-                        def ecrRegistry = "${awsAccountId}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
                         def ecrImageUri = "${ecrRegistry}/${env.ECR_REPO_NAME}:${env.IMAGE_TAG}"
+                        def acrImageUri = "${acrLoginServer}/${env.ECR_REPO_NAME}:${env.IMAGE_TAG}"
+                        def acrLatest   = "${acrLoginServer}/${env.ECR_REPO_NAME}:latest"
                         sh """
                             mkdir -p /kaniko/.docker
-                            echo '{"credsStore":"ecr-login"}' > /kaniko/.docker/config.json
+                            cp "\$(pwd)/kaniko-docker-config.json" /kaniko/.docker/config.json
                             /kaniko/executor \\
                                 --context \$(pwd)/openemr \\
                                 --dockerfile \$(pwd)/openemr/Dockerfile \\
-                                --destination ${ecrImageUri}
+                                --destination ${ecrImageUri} \\
+                                --destination ${acrImageUri} \\
+                                --destination ${acrLatest}
                         """
                         env.ECR_IMAGE_URI = ecrImageUri
+                        env.ACR_IMAGE_URI = acrImageUri
+                        echo "푸시 완료 → ECR: ${ecrImageUri} / ACR: ${acrImageUri} (+ :latest)"
                     }
                 }
             }
         }
 
-        stage('4. GitOps 레포 자동 수정 및 푸시') {
+        // [신규] 이미지 취약점 스캔 게이트 — HIGH 이상 리포트, CRITICAL 있으면 빌드 실패.
+        //   기본 출력이 모든 package.json을 clean으로 도배하므로, 'Total:'부터만 출력해 간결화.
+        //   게이트는 출력 버리고 exit code만 사용. 시크릿은 1.7에서 했으니 --scanners vuln.
+        stage('3.5 Trivy 이미지 취약점 스캔') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
+            steps {
+                container('trivy') {
+                    sh """
+                        trivy image --severity HIGH,CRITICAL --no-progress --scanners vuln \\
+                            --exit-code 0 ${env.ECR_IMAGE_URI} > trivy-report.txt 2>&1 || true
+                        echo "───── Trivy HIGH/CRITICAL 취약점 상세 ─────"
+                        if grep -q "Total:" trivy-report.txt; then
+                            sed -n '/Total:/,\$p' trivy-report.txt
+                        else
+                            echo "HIGH/CRITICAL 취약점 없음"
+                        fi
+                        echo "────────────────────────────────────────────"
+                        trivy image --severity CRITICAL --no-progress --scanners vuln \\
+                            --exit-code 1 --quiet ${env.ECR_IMAGE_URI} > /dev/null 2>&1
+                    """
+                }
+            }
+        }
+
+        // [신규] 배포 승인 대기 (QA) — gitops 반영(실제 배포) 전에 수동 승인.
+        //   이미지는 이미 ECR/ACR에 올라가 있고, 승인해야만 gitops가 갱신되어 배포됨.
+        stage('4. 배포 승인 대기 (QA)') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
+            steps {
+                script {
+                    timeout(time: 24, unit: 'HOURS') {
+                        env.DEPLOY_APPROVER = input(
+                            message: "openemr 이미지(build #${env.IMAGE_TAG})가 ECR/ACR에 push 완료됐습니다. gitops에 반영해 배포할까요?",
+                            ok: '배포 진행',
+                            submitterParameter: 'DEPLOY_APPROVER'
+                        )
+                    }
+                }
+            }
+        }
+
+        stage('5. GitOps 레포 자동 수정 및 푸시') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
@@ -178,12 +268,16 @@ spec:
                                 rm -rf gitops-repo-tmp
                                 CLEAN_PASSWORD=\$(echo -n "\${GIT_PASSWORD}" | tr -d '\\n\\r')
                                 CLEAN_USERNAME=\$(echo -n "\${GIT_USERNAME}" | tr -d '\\n\\r')
+                                set +x
                                 git clone -b main "http://\${CLEAN_USERNAME}:\${CLEAN_PASSWORD}@10.0.4.10:8080/root/gitops-repo.git" gitops-repo-tmp
+                                set -x
                                 sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/openemr/deployment.yaml
                                 cd gitops-repo-tmp
                                 git add kubernetes/apps/openemr/deployment.yaml
-                                git commit -m "openemr image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG})"
-                                git push origin main
+                                git commit -m "openemr image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG}) - approved by ${env.DEPLOY_APPROVER}"
+                                set +x
+                                git push origin main || (git pull --rebase origin main && git push origin main)
+                                set -x
                             """
                         }
                     }
@@ -192,4 +286,3 @@ spec:
         }
     }
 }
-

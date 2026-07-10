@@ -1,0 +1,17 @@
+# windows-ad-scrapeconfig.yaml
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: onprem-servers
+  namespace: monitoring
+  labels:
+    release: monitoring-stack
+spec:
+  staticConfigs:
+    - targets:
+        - 192.168.100.10:9182  # Windows AD
+        - 192.168.100.20:9100  # VDI / Mail
+        - 192.168.100.50:9100  # HIS DB
+
+  metricsPath: /metrics
+  scrapeInterval: 30s

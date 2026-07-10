@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: k6-load-test-script
-  namespace: dev-apps
+  namespace: web-apps
 data:
   test.js: |
     import http from 'k6/http';
