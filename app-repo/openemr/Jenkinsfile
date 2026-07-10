@@ -35,6 +35,18 @@ spec:
         cpu: "200m"
       limits:
         memory: "1Gi"
+  # [DR] Azure CLI — ACA(Container Apps) 이미지 갱신용 (6단계).
+  #   관리 평면(management.azure.com) 호출. Service Principal 비대면 로그인.
+  - name: azcli
+    image: mcr.microsoft.com/azure-cli:latest
+    command: ["sleep"]
+    args: ["infinity"]
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
 """
         }
     }
@@ -55,6 +67,13 @@ spec:
         IMAGE_TAG           = "${BUILD_NUMBER}"
         // [DR] ACR 자격증명 SSM 파라미터 경로 (login_server/username/password)
         ACR_SSM_PREFIX      = "/his-main/acr"
+        // [DR] Azure Service Principal (Jenkins Credentials에 Secret text로 등록 필요)
+        AZURE_TENANT_ID     = credentials('AZURE_TENANT_ID')
+        AZURE_CLIENT_ID     = credentials('AZURE_CLIENT_ID')
+        AZURE_CLIENT_SECRET = credentials('AZURE_CLIENT_SECRET')
+        // [DR] Azure Container Apps 대상 (Warm Standby)
+        ACA_NAME            = "his-main-dr-app"
+        ACA_RG              = "his-main-dr-rg"
     }
 
     // [변경] openemr/ 변경 없으면 빌드 자체가 시작 안 됨
@@ -208,7 +227,8 @@ spec:
                         """
                         env.ECR_IMAGE_URI = ecrImageUri
                         env.ACR_IMAGE_URI = acrImageUri
-                        echo "푸시 완료 → ECR: ${ecrImageUri} / ACR: ${acrImageUri} (+ :latest)"
+                        env.ACR_IMAGE_LATEST = acrLatest   // [DR] 6단계 ACA가 바라보는 warm-standby 태그
+                        echo "푸시 완료 → ECR: ${ecrImageUri} / ACR: ${acrImageUri} (+ ${acrLatest})"
                     }
                 }
             }
@@ -238,15 +258,15 @@ spec:
             }
         }
 
-        // [신규] 배포 승인 대기 (QA) — gitops 반영(실제 배포) 전에 수동 승인.
-        //   이미지는 이미 ECR/ACR에 올라가 있고, 승인해야만 gitops가 갱신되어 배포됨.
+        // [신규] 배포 승인 대기 (QA) — gitops 반영(AWS 배포) + ACA 갱신(Azure DR) 전에 수동 승인.
+        //   이미지는 이미 ECR/ACR에 올라가 있고, 승인해야만 AWS·Azure 양측에 반영됨.
         stage('4. 배포 승인 대기 (QA)') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 script {
                     timeout(time: 24, unit: 'HOURS') {
                         env.DEPLOY_APPROVER = input(
-                            message: "openemr 이미지(build #${env.IMAGE_TAG})가 ECR/ACR에 push 완료됐습니다. gitops에 반영해 배포할까요?",
+                            message: "openemr 이미지(build #${env.IMAGE_TAG})가 ECR/ACR에 push 완료됐습니다. AWS(gitops) + Azure DR(ACA)에 반영해 배포할까요?",
                             ok: '배포 진행',
                             submitterParameter: 'DEPLOY_APPROVER'
                         )
@@ -255,7 +275,7 @@ spec:
             }
         }
 
-        stage('5. GitOps 레포 자동 수정 및 푸시') {
+        stage('5. GitOps 레포 자동 수정 및 푸시 (AWS 배포)') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
@@ -284,5 +304,31 @@ spec:
                 }
             }
         }
+
+        // [DR] Azure Container Apps 이미지 갱신 (문서 Phase 2 - 4단계 반영).
+        //   상시 대기(Warm Standby) 중인 ACA(his-main-dr-app)의 이미지를 방금 ACR에 push한
+        //   실제 서비스 이미지(:latest)로 즉각 교체 → DR 전환 시 지연 최소화.
+        //   - az login: Service Principal 비대면 로그인 (set +x 로 secret 로그 억제)
+        //   - 에이전트가 EKS(AWS VPC 내부)에서 실행 → 문서의 '내부망 러너' 요건 충족
+        //   ※ 전제: ACA가 ACR에서 pull할 권한(관리 ID 또는 admin 자격증명) 사전 구성
+        stage('6. Azure DR: ACA 이미지 갱신') {
+            when { environment name: 'APP_CHANGED', value: 'true' }
+            steps {
+                container('azcli') {
+                    sh """
+                        set +x
+                        az login --service-principal \\
+                            -u "\$AZURE_CLIENT_ID" -p "\$AZURE_CLIENT_SECRET" --tenant "\$AZURE_TENANT_ID" >/dev/null
+                        set -x
+                        az containerapp update \\
+                            --name "${env.ACA_NAME}" \\
+                            --resource-group "${env.ACA_RG}" \\
+                            --image "${env.ACR_IMAGE_LATEST}"
+                        echo "Azure DR(ACA) 갱신 완료 → ${env.ACA_NAME} = ${env.ACR_IMAGE_LATEST}"
+                    """
+                }
+            }
+        }
     }
 }
+

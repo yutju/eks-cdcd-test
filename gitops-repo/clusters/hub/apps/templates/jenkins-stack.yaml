@@ -61,6 +61,14 @@ spec:
               value: "false"
             - name: GITLAB_TOKEN_ENV
               valueFrom: { secretKeyRef: { name: gitlab-api-secret, key: api-token } }
+            # [DR] Azure Service Principal — ESO가 만든 azure-sp-secret에서 주입.
+            #   JCasC credentials 블록에서 ${..._ENV} 로 참조된다.
+            - name: AZURE_TENANT_ID_ENV
+              valueFrom: { secretKeyRef: { name: azure-sp-secret, key: tenant-id } }
+            - name: AZURE_CLIENT_ID_ENV
+              valueFrom: { secretKeyRef: { name: azure-sp-secret, key: client-id } }
+            - name: AZURE_CLIENT_SECRET_ENV
+              valueFrom: { secretKeyRef: { name: azure-sp-secret, key: client-secret } }
             - name: CM_GITLAB_URL
               valueFrom: { configMapKeyRef: { name: jenkins-infra-config, key: GITLAB_URL } }
             - name: CM_JENKINS_IP
@@ -100,6 +108,22 @@ spec:
                               id: "gitlab-checkout-cred"
                               username: "root"
                               password: "${GITLAB_TOKEN_ENV}"
+                          # [DR] Azure SP 3종 — openemr/Jenkinsfile 의 credentials('...') id 와 정확히 일치해야 함
+                          - string:
+                              scope: GLOBAL
+                              id: "AZURE_TENANT_ID"
+                              secret: "${AZURE_TENANT_ID_ENV}"
+                              description: "Azure SP Tenant ID (DR/ACA)"
+                          - string:
+                              scope: GLOBAL
+                              id: "AZURE_CLIENT_ID"
+                              secret: "${AZURE_CLIENT_ID_ENV}"
+                              description: "Azure SP Client ID (DR/ACA)"
+                          - string:
+                              scope: GLOBAL
+                              id: "AZURE_CLIENT_SECRET"
+                              secret: "${AZURE_CLIENT_SECRET_ENV}"
+                              description: "Azure SP Client Secret (DR/ACA)"
                 jobs:
                   - script: >
                       pipelineJob('jenkins-app-service-pipeline') {
@@ -160,4 +184,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-
