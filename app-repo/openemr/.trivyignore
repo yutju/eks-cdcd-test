@@ -1,0 +1,13 @@
+# openemr/.trivyignore
+# ─────────────────────────────────────────────────────────────
+# openemr 공식 이미지(upstream)에 번들된, 우리가 소스로 수정할 수 없는 알려진 취약점 중
+# 런타임 위험이 낮다고 판단해 "수용"한 CVE 목록.
+#   - 이미지 취약점 게이트(3.5단계)에서만 --ignorefile 로 참조된다.
+#   - 여기 등록되지 않은 '새' CRITICAL 은 그대로 빌드를 차단한다.
+#   - 리포트(3.5단계 로그)에는 아래 CVE도 그대로 출력되어 가시성은 유지된다.
+#
+# CVE-2022-22965 (Spring4Shell — org.springframework:spring-beans RCE)
+#   위치 : schemaspy.jar (DB 스키마 문서화용 개발 도구, openemr 런타임 서비스 경로 아님)
+#   사유 : upstream openemr 이미지가 번들 → 우리 app-repo 소스로 수정 불가
+#   재평가: openemr 베이스 이미지 갱신 시 재검토
+CVE-2022-22965

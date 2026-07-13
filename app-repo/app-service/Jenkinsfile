@@ -164,6 +164,8 @@ spec:
         }
 
         // [수정] error()로 중단하지 않고 when 조건으로 스킵 — NOT_BUILT 표시 유지.
+        // [수정] 훅 중복확인 grep을 토큰 기준으로 — 베이스 URL은 openemr 파이프라인과 동일해서
+        //   토큰 없는 매칭이면 서로의 훅을 "이미 있음"으로 오판해 자기 훅 등록을 건너뜀.
         stage('2. GitLab 웹훅 자동 등록') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
@@ -171,7 +173,7 @@ spec:
                     script {
                         def gitlabApiBase = "${env.GITLAB_URL}/api/v4"
                         sh """
-                            EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_BASE_URL}" || true)
+                            EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "token=${env.GENERIC_TRIGGER_TOKEN}" || true)
                             if [ -z "\$EXISTING_HOOK" ]; then
                                 curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST -G "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" \\
                                     --data-urlencode "url=${env.JENKINS_WEBHOOK_BASE_URL}?token=${env.GENERIC_TRIGGER_TOKEN}" \\

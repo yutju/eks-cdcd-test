@@ -15,6 +15,7 @@ spec:
   maxReplicaCount: 10
   cooldownPeriod: 60
   triggers:
+    # 리소스 기반 (metrics-server) — HPA와 동일
     - type: cpu
       metricType: Utilization
       metadata:
@@ -23,3 +24,15 @@ spec:
       metricType: Utilization
       metadata:
         value: "70"
+    # [신규] Prometheus 커스텀 메트릭 — 초당 요청수(RPS) 기반.
+    #   KEDA가 query 결과(전체 RPS)를 threshold(파드당 목표 RPS)로 나눠 목표 파드 수 계산.
+    #   예: 총 500 RPS / threshold 50 → 10개. CPU%가 안 올라도 트래픽이 많으면 확장됨.
+    #   → HPA 단독으론(prometheus-adapter 없이) 불가능한 부분 = KEDA를 쓰는 이유.
+    - type: prometheus
+      metadata:
+        serverAddress: http://monitoring-stack-kube-prom-prometheus.monitoring.svc.cluster.local:9090
+        metricName: app_service_http_rps
+        # 전체(stable+canary) RPS 합계. 실제 메트릭 라벨에 맞게 셀렉터 조정 가능.
+        query: sum(rate(http_requests_total{namespace="web-apps"}[1m]))
+        threshold: "50"        # 파드당 목표 RPS (튜닝 값)
+

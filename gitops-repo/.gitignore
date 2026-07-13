@@ -3,16 +3,28 @@
 *secret*.yml
 *Secret*.yaml
 *Secret*.yml
-
 # 명시적인 Secret 파일명 (컨벤션에 따라 추가)
 secrets.yaml
 credentials.yaml
-
 # TLS Certificates & Keys (인증서 관련)
 *.pem
 *.key
 *.crt
-
 # Environment Variables (환경 변수)
 .env
 .env.*
+ 
+# ─────────────────────────────────────────────
+# 예외: ESO 매니페스트(ExternalSecret / SecretStore)는 평문 비밀이 없으므로
+#   위치와 무관하게 커밋 허용. (SSM 경로 참조만 있음 — 실제 값은 SSM에만 존재)
+#   ※ 평문 Secret 파일을 externalsecret/secretstore 이름으로 만들지 말 것.
+# ─────────────────────────────────────────────
+!*externalsecret*.yaml
+!*externalsecret*.yml
+!*ExternalSecret*.yaml
+!*secretstore*.yaml
+!*secretstore*.yml
+!*SecretStore*.yaml
+# (선택) external-secrets 디렉터리 전체 예외
+!kubernetes/cicd/external-secrets/
+!kubernetes/cicd/external-secrets/*.yaml

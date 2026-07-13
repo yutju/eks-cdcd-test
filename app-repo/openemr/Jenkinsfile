@@ -35,7 +35,7 @@ spec:
         cpu: "200m"
       limits:
         memory: "1Gi"
-  # [DR] Azure CLI — ACA(Container Apps) 이미지 갱신용 (6단계).
+  # [DR] Azure CLI — ACA(Container Apps) 이미지 갱신용 (5단계).
   #   관리 평면(management.azure.com) 호출. Service Principal 비대면 로그인.
   - name: azcli
     image: mcr.microsoft.com/azure-cli:latest
@@ -50,12 +50,10 @@ spec:
 """
         }
     }
-
     // [신규] 동시 빌드 금지 — 두 빌드가 동시에 gitops-repo에 push하면 꼬이므로
     options {
         disableConcurrentBuilds()
     }
-
     environment {
         GITLAB_API_TOKEN    = credentials('gitlab-token-id')
         GITLAB_URL          = "${env.GITLAB_URL ?: 'http://10.0.4.10:8080'}"
@@ -67,16 +65,17 @@ spec:
         IMAGE_TAG           = "${BUILD_NUMBER}"
         // [DR] ACR 자격증명 SSM 파라미터 경로 (login_server/username/password)
         ACR_SSM_PREFIX      = "/his-main/acr"
-        // [DR] Azure Service Principal (Jenkins Credentials에 Secret text로 등록 필요)
-        AZURE_TENANT_ID     = credentials('AZURE_TENANT_ID')
-        AZURE_CLIENT_ID     = credentials('AZURE_CLIENT_ID')
-        AZURE_CLIENT_SECRET = credentials('AZURE_CLIENT_SECRET')
+        // [DR] Azure Service Principal도 SSM에서 직접 조회 (ACR과 동일 패턴).
+        //   → Jenkins Credentials 등록 불필요 = 시작 단계 credentials() 실패 없음.
+        //   → Azure 인프라 재배포 시에도 SSM가 자동 동기화되어 권한 유실 없음.
+        //   경로: ${AZURE_SSM_PREFIX}/azure_tenant_id | azure_client_id | azure_client_secret(SecureString)
+        AZURE_SSM_PREFIX    = "/his-main/jenkins"
         // [DR] Azure Container Apps 대상 (Warm Standby)
         ACA_NAME            = "his-main-dr-app"
         ACA_RG              = "his-main-dr-rg"
     }
-
     // [변경] openemr/ 변경 없으면 빌드 자체가 시작 안 됨
+    // [수정] app-service와 동일하게 main 브랜치로 제한 ($ref 포함).
     triggers {
         GenericTrigger(
             genericVariables: [
@@ -90,11 +89,10 @@ spec:
             printContributedVariables: true,
             printPostContent: false,
             silentResponse: false,
-            regexpFilterText: '$modified $added $removed',
-            regexpFilterExpression: '.*openemr/.*'
+            regexpFilterText: '$ref $modified $added $removed',
+            regexpFilterExpression: '^refs/heads/main.*openemr/.*$'
         )
     }
-
     stages {
         stage('0. 기본 에이전트 도구 주입') {
             steps {
@@ -108,7 +106,6 @@ spec:
                 }
             }
         }
-
         stage('1. 코드 체크아웃') {
             steps {
                 container('kubectl') {
@@ -116,7 +113,6 @@ spec:
                 }
             }
         }
-
         stage('1.5 변경 경로 확인') {
             steps {
                 container('kubectl') {
@@ -131,7 +127,6 @@ spec:
                             ''',
                             returnStdout: true
                         ).trim()
-
                         if (changed == "__FULL_BUILD__") {
                             echo "비교 기준 커밋 없음(첫 커밋/얕은 클론) — 안전하게 빌드 진행"
                             env.APP_CHANGED = 'true'
@@ -145,7 +140,6 @@ spec:
                 }
             }
         }
-
         // [신규] 시크릿 스캔 — 소스(openemr/)에 하드코딩된 자격증명이 커밋됐는지 검사.
         // 발견 시 빌드 차단. 오탐은 openemr/.trivyignore 에 룰 ID 등록으로 예외 처리.
         stage('1.7 Trivy 시크릿 스캔') {
@@ -158,7 +152,8 @@ spec:
                 }
             }
         }
-
+        // [수정] 훅 중복확인 grep을 토큰 기준으로 — 베이스 URL은 app-service 파이프라인과 동일해서
+        //   토큰 없는 매칭이면 서로의 훅을 "이미 있음"으로 오판해 자기 훅 등록을 건너뜀.
         stage('2. GitLab 웹훅 자동 등록') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
@@ -166,7 +161,7 @@ spec:
                     script {
                         def gitlabApiBase = "${env.GITLAB_URL}/api/v4"
                         sh """
-                            EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "${env.JENKINS_WEBHOOK_BASE_URL}" || true)
+                            EXISTING_HOOK=\$(curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --silent "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" | grep "token=${env.GENERIC_TRIGGER_TOKEN}" || true)
                             if [ -z "\$EXISTING_HOOK" ]; then
                                 curl --header "PRIVATE-TOKEN: ${env.GITLAB_API_TOKEN}" --request POST -G "${gitlabApiBase}/projects/${env.GITLAB_PROJECT_ID}/hooks" \\
                                     --data-urlencode "url=${env.JENKINS_WEBHOOK_BASE_URL}?token=${env.GENERIC_TRIGGER_TOKEN}" \\
@@ -178,7 +173,6 @@ spec:
                 }
             }
         }
-
         // [DR 통합] 한 번 빌드로 AWS ECR + Azure ACR 동시 push (Kaniko 멀티 목적지).
         //   - ECR : ecr-login 헬퍼(credHelpers)로 인증 (kaniko debug 이미지에 내장)
         //   - ACR : SSM에 보관된 admin 자격증명으로 static basic auth
@@ -191,12 +185,10 @@ spec:
                     def awsAccountId  = ''
                     def acrLoginServer = ''
                     def ecrRegistry    = ''
-
                     container('kubectl') {
                         awsAccountId   = sh(script: "aws sts get-caller-identity --query 'Account' --output text", returnStdout: true).trim()
                         acrLoginServer = sh(script: "aws ssm get-parameter --name '${env.ACR_SSM_PREFIX}/login_server' --query 'Parameter.Value' --output text", returnStdout: true).trim()
                         ecrRegistry    = "${awsAccountId}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
-
                         // ACR 자격증명(username/password)을 SSM에서 꺼내 kaniko용 docker config 생성.
                         // set +x 로 비밀번호가 콘솔 로그에 찍히지 않게 함.
                         sh """
@@ -210,7 +202,6 @@ spec:
                             echo "docker config 생성 완료 (ECR: ${ecrRegistry}, ACR: ${acrLoginServer})"
                         """
                     }
-
                     container('kaniko') {
                         def ecrImageUri = "${ecrRegistry}/${env.ECR_REPO_NAME}:${env.IMAGE_TAG}"
                         def acrImageUri = "${acrLoginServer}/${env.ECR_REPO_NAME}:${env.IMAGE_TAG}"
@@ -227,16 +218,18 @@ spec:
                         """
                         env.ECR_IMAGE_URI = ecrImageUri
                         env.ACR_IMAGE_URI = acrImageUri
-                        env.ACR_IMAGE_LATEST = acrLatest   // [DR] 6단계 ACA가 바라보는 warm-standby 태그
+                        env.ACR_IMAGE_LATEST = acrLatest   // [DR] 5단계 ACA가 바라보는 warm-standby 태그
                         echo "푸시 완료 → ECR: ${ecrImageUri} / ACR: ${acrImageUri} (+ ${acrLatest})"
                     }
                 }
             }
         }
-
         // [신규] 이미지 취약점 스캔 게이트 — HIGH 이상 리포트, CRITICAL 있으면 빌드 실패.
         //   기본 출력이 모든 package.json을 clean으로 도배하므로, 'Total:'부터만 출력해 간결화.
         //   게이트는 출력 버리고 exit code만 사용. 시크릿은 1.7에서 했으니 --scanners vuln.
+        //   [수정] 리포트는 전체 노출(가시성 유지), 게이트에만 openemr/.trivyignore 적용 →
+        //     upstream openemr 이미지가 번들한 수용된 CVE(예: Spring4Shell)는 통과시키되,
+        //     .trivyignore 에 없는 '새' CRITICAL 은 그대로 차단.
         stage('3.5 Trivy 이미지 취약점 스캔') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
@@ -244,7 +237,7 @@ spec:
                     sh """
                         trivy image --severity HIGH,CRITICAL --no-progress --scanners vuln \\
                             --exit-code 0 ${env.ECR_IMAGE_URI} > trivy-report.txt 2>&1 || true
-                        echo "───── Trivy HIGH/CRITICAL 취약점 상세 ─────"
+                        echo "───── Trivy HIGH/CRITICAL 취약점 상세 (수용 CVE는 openemr/.trivyignore 참조) ─────"
                         if grep -q "Total:" trivy-report.txt; then
                             sed -n '/Total:/,\$p' trivy-report.txt
                         else
@@ -252,30 +245,14 @@ spec:
                         fi
                         echo "────────────────────────────────────────────"
                         trivy image --severity CRITICAL --no-progress --scanners vuln \\
+                            --ignorefile openemr/.trivyignore \\
                             --exit-code 1 --quiet ${env.ECR_IMAGE_URI} > /dev/null 2>&1
                     """
                 }
             }
         }
-
-        // [신규] 배포 승인 대기 (QA) — gitops 반영(AWS 배포) + ACA 갱신(Azure DR) 전에 수동 승인.
-        //   이미지는 이미 ECR/ACR에 올라가 있고, 승인해야만 AWS·Azure 양측에 반영됨.
-        stage('4. 배포 승인 대기 (QA)') {
-            when { environment name: 'APP_CHANGED', value: 'true' }
-            steps {
-                script {
-                    timeout(time: 24, unit: 'HOURS') {
-                        env.DEPLOY_APPROVER = input(
-                            message: "openemr 이미지(build #${env.IMAGE_TAG})가 ECR/ACR에 push 완료됐습니다. AWS(gitops) + Azure DR(ACA)에 반영해 배포할까요?",
-                            ok: '배포 진행',
-                            submitterParameter: 'DEPLOY_APPROVER'
-                        )
-                    }
-                }
-            }
-        }
-
-        stage('5. GitOps 레포 자동 수정 및 푸시 (AWS 배포)') {
+        // GitOps 반영(AWS 배포) + ACA 갱신(Azure DR). 승인 게이트 없이 자동 진행.
+        stage('4. GitOps 레포 자동 수정 및 푸시 (AWS 배포)') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
                 container('kubectl') {
@@ -294,7 +271,7 @@ spec:
                                 sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/openemr/deployment.yaml
                                 cd gitops-repo-tmp
                                 git add kubernetes/apps/openemr/deployment.yaml
-                                git commit -m "openemr image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG}) - approved by ${env.DEPLOY_APPROVER}"
+                                git commit -m "openemr image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG})"
                                 set +x
                                 git push origin main || (git pull --rebase origin main && git push origin main)
                                 set -x
@@ -304,21 +281,46 @@ spec:
                 }
             }
         }
-
         // [DR] Azure Container Apps 이미지 갱신 (문서 Phase 2 - 4단계 반영).
         //   상시 대기(Warm Standby) 중인 ACA(his-main-dr-app)의 이미지를 방금 ACR에 push한
         //   실제 서비스 이미지(:latest)로 즉각 교체 → DR 전환 시 지연 최소화.
-        //   - az login: Service Principal 비대면 로그인 (set +x 로 secret 로그 억제)
+        //   - Azure SP 자격증명은 SSM에서 조회(kubectl 컨테이너, aws-cli) → 공유 워크스페이스
+        //     파일(azure-sp.env)로 전달 → azcli 컨테이너가 읽어 az login. (컨테이너 간 env 미전달이라
+        //     ACR 3단계와 동일하게 파일 경유. set +x 로 secret 로그 억제.)
         //   - 에이전트가 EKS(AWS VPC 내부)에서 실행 → 문서의 '내부망 러너' 요건 충족
-        //   ※ 전제: ACA가 ACR에서 pull할 권한(관리 ID 또는 admin 자격증명) 사전 구성
-        stage('6. Azure DR: ACA 이미지 갱신') {
+        //   ※ 전제1: jenkins_agent IAM 역할이 ${AZURE_SSM_PREFIX}/* 조회 + kms:Decrypt 가능해야 함
+        //   ※ 전제2: ACA가 ACR에서 pull할 권한(관리 ID 또는 admin 자격증명) 사전 구성
+        stage('5. Azure DR: ACA 이미지 갱신') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
+                container('kubectl') {
+                    sh """
+                        set -e
+                        set +x
+                        AZURE_TENANT_ID=\$(aws ssm get-parameter --name '${env.AZURE_SSM_PREFIX}/azure_tenant_id' --query 'Parameter.Value' --output text)
+                        AZURE_CLIENT_ID=\$(aws ssm get-parameter --name '${env.AZURE_SSM_PREFIX}/azure_client_id' --query 'Parameter.Value' --output text)
+                        AZURE_CLIENT_SECRET=\$(aws ssm get-parameter --name '${env.AZURE_SSM_PREFIX}/azure_client_secret' --with-decryption --query 'Parameter.Value' --output text)
+                        if [ -z "\$AZURE_TENANT_ID" ] || [ -z "\$AZURE_CLIENT_ID" ] || [ -z "\$AZURE_CLIENT_SECRET" ]; then
+                            echo 'ERROR: Azure SP 자격증명이 비어있음 — jenkins_agent 역할에 ${env.AZURE_SSM_PREFIX}/* SSM 조회 권한을 확인하세요.'
+                            exit 1
+                        fi
+                        {
+                          echo "AZURE_TENANT_ID=\$AZURE_TENANT_ID"
+                          echo "AZURE_CLIENT_ID=\$AZURE_CLIENT_ID"
+                          echo "AZURE_CLIENT_SECRET=\$AZURE_CLIENT_SECRET"
+                        } > "\$(pwd)/azure-sp.env"
+                        chmod 600 "\$(pwd)/azure-sp.env"
+                        set -x
+                        echo "Azure SP 자격증명 로드 완료 (SSM: ${env.AZURE_SSM_PREFIX})"
+                    """
+                }
                 container('azcli') {
                     sh """
                         set +x
+                        . "\$(pwd)/azure-sp.env"
                         az login --service-principal \\
                             -u "\$AZURE_CLIENT_ID" -p "\$AZURE_CLIENT_SECRET" --tenant "\$AZURE_TENANT_ID" >/dev/null
+                        rm -f "\$(pwd)/azure-sp.env"
                         set -x
                         az containerapp update \\
                             --name "${env.ACA_NAME}" \\
@@ -331,4 +333,3 @@ spec:
         }
     }
 }
-
