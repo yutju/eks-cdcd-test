@@ -14,8 +14,39 @@ spec:
   minReplicaCount: 3
   maxReplicaCount: 10
   cooldownPeriod: 60
+
+  # ── [신규 2] fallback: 메트릭 소스(특히 Prometheus) 조회 실패 시 안전 replica로 버팀 ──
+  #   실패가 failureThreshold 회 연속되면 desiredReplicas 대신 replicas 값으로 고정.
+  #   ※ 제약: fallback 은 AverageValue 계열 트리거(= prometheus)에만 적용됨.
+  #     cpu/memory(Utilization) 트리거에는 적용되지 않으니, 실질적으로
+  #     "Prometheus 스캔 실패 시 5개 유지" 용도로 이해할 것.
+  fallback:
+    failureThreshold: 3
+    replicas: 5
+
+  # ── [신규 1] 스케일 동작 튜닝(anti-flapping): HPA behavior 를 그대로 주입 ──
+  #   축소는 5분 안정화 + 분당 50%로 천천히(출렁임 흡수), 확장은 즉시·공격적.
+  advanced:
+    restoreToOriginalReplicaCount: true   # ScaledObject 삭제 시 원래 replica 수로 복원
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300   # 최근 5분 최댓값 유지 후 축소 (flapping 방지)
+          policies:
+            - type: Percent
+              value: 50
+              periodSeconds: 60             # 1분에 최대 50%만 축소
+        scaleUp:
+          stabilizationWindowSeconds: 0     # 확장은 즉시
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 30             # 30초당 최대 4개 증설
+          selectPolicy: Max
+
+  # KEDA는 아래 여러 트리거가 각각 계산한 목표 파드 수 중 '최댓값'으로 스케일한다.
   triggers:
-    # 리소스 기반 (metrics-server) — HPA와 동일
+    # ── 리소스 기반 (metrics-server) — HPA와 동일 ──
     - type: cpu
       metricType: Utilization
       metadata:
@@ -24,15 +55,21 @@ spec:
       metricType: Utilization
       metadata:
         value: "70"
-    # [신규] Prometheus 커스텀 메트릭 — 초당 요청수(RPS) 기반.
-    #   KEDA가 query 결과(전체 RPS)를 threshold(파드당 목표 RPS)로 나눠 목표 파드 수 계산.
-    #   예: 총 500 RPS / threshold 50 → 10개. CPU%가 안 올라도 트래픽이 많으면 확장됨.
-    #   → HPA 단독으론(prometheus-adapter 없이) 불가능한 부분 = KEDA를 쓰는 이유.
+    # ── Prometheus 커스텀 메트릭 — 초당 요청수(RPS) 기반 (HPA 단독 불가) ──
     - type: prometheus
       metadata:
         serverAddress: http://monitoring-stack-kube-prom-prometheus.monitoring.svc.cluster.local:9090
         metricName: app_service_http_rps
-        # 전체(stable+canary) RPS 합계. 실제 메트릭 라벨에 맞게 셀렉터 조정 가능.
         query: sum(rate(http_requests_total{namespace="web-apps"}[1m]))
         threshold: "50"        # 파드당 목표 RPS (튜닝 값)
-
+    # ── Cron 선제(pre) 스케일 — 예측된 피크 시간대 사전 확장 (HPA 불가) ──
+    #   평일 11:00~16:30 트래픽 집중이 예측됨.
+    #   HPA는 반응형이라 스파이크 초반에 파드가 부족해 지연이 남 → cron으로 미리 띄운다.
+    #   start~end 구간에는 desiredReplicas 가 '바닥값'으로 강제됨(그 이상은 CPU/RPS가 결정).
+    #   구간 밖에는 이 트리거가 비활성 → minReplicaCount(3) + 반응형 트리거로 복귀.
+    - type: cron
+      metadata:
+        timezone: Asia/Seoul
+        start: "0 11 * * 1-5"      # 평일 11:00 시작
+        end:   "30 16 * * 1-5"     # 평일 16:30 종료
+        desiredReplicas: "6"       # 피크 시간대 최소 유지 파드 (min 3 < 6 < max 10)
