@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: '{{ .Values.global.gitlabUrl }}/root/gitops-repo.git'
     path: kubernetes/apps/openemr
-    targetRevision: vdi_openemr
+    targetRevision: main
   destination:
     server: '{{ required "global.edgeApiUrl is required (ApplicationSet must inject edge cluster API URL)" .Values.global.edgeApiUrl }}'   # ApplicationSet이 자동으로 VDI 클러스터 주소 주입
     namespace: his-emr

@@ -1,0 +1,79 @@
+# clusters/his-main-eks-vdi-internal/apps/templates/edge-eso.yaml
+# 엣지(VDI, VPC2·인터넷 없음) 클러스터에 External Secrets Operator 배포 + 설정.
+#   ※ 전제(아래 3가지가 없으면 동작 안 함):
+#     1) VPC 엔드포인트: com.amazonaws.<region>.ssm / .kms / .sts (인터넷 없어 API 도달 불가)
+#     2) ESO 이미지 ECR 미러: vdi/external-secrets (ghcr.io 못 가져오므로)
+#     3) IRSA: his-main-external-secrets-vdi-role (엣지 OIDC 신뢰, SSM+KMS 권한)
+# ─────────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edge-2-external-secrets
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"   # CRD/오퍼레이터가 먼저 떠야 ExternalSecret이 동작
+spec:
+  project: default
+  source:
+    repoURL: 'https://charts.external-secrets.io'
+    chart: external-secrets
+    targetRevision: 0.9.19
+    helm:
+      values: |
+        installCRDs: true
+        # 엣지는 인터넷 없음 → ghcr.io 대신 ECR 미러(vdi/pod-image) 사용.
+        #   컨벤션: 단일 레포 vdi/pod-image + 태그 접두어(external-secrets-*).
+        #   ESO는 controller/webhook/certController가 동일 이미지를 씀 → 태그 하나로 통일.
+        image:
+          repository: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/vdi/pod-image
+          tag: external-secrets-v0.9.19
+        webhook:
+          image:
+            repository: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/vdi/pod-image
+            tag: external-secrets-v0.9.19
+        certController:
+          image:
+            repository: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/vdi/pod-image
+            tag: external-secrets-v0.9.19
+        serviceAccount:
+          create: true
+          name: external-secrets
+          annotations:
+            # IRSA: modules/eks_vdi/iam.tf 의 external_secrets_vdi 역할 (엣지 OIDC 신뢰)
+            eks.amazonaws.com/role-arn: "arn:aws:iam::278584440977:role/his-main-external-secrets-vdi-role"
+        # 엣지 노드에 taint가 있으면 필요 (LB 컨트롤러 edge처럼) — 필요 없으면 제거
+        # nodeSelector: { role: infra }
+  destination:
+    server: '{{ required "global.edgeApiUrl is required" .Values.global.edgeApiUrl }}'
+    namespace: external-secrets
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+# 엣지용 ESO 설정(ClusterSecretStore + ExternalSecret) 동기화 앱.
+#   전용 경로 kubernetes/cicd/external-secrets-edge 를 엣지 클러스터로 배포.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edge-2-external-secrets-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"    # 오퍼레이터(-1) 다음
+spec:
+  project: default
+  source:
+    repoURL: '{{ .Values.global.gitlabUrl }}/root/gitops-repo.git'
+    path: kubernetes/cicd/external-secrets-edge
+    targetRevision: main
+  destination:
+    server: '{{ required "global.edgeApiUrl is required" .Values.global.edgeApiUrl }}'
+    namespace: external-secrets
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
