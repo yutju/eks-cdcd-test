@@ -9,6 +9,7 @@ metadata:
     service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
 spec:
   type: LoadBalancer
+  loadBalancerClass: service.k8s.aws/nlb
   selector:
     app: openemr
   ports:

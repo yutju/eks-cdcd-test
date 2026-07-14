@@ -1,0 +1,23 @@
+# 정적 프로비저닝 PV - 고정 EFS Access Point(fsap-0ff1a57049a03217f)를 가리킴.
+# 이 Access Point는 이미 9단계 마이그레이션이 완료된 기존 디렉터리
+# (/pvc-f8f12c57-8711-4063-a447-d79ae816ee7d, docker-version=9)를 재사용하도록
+# 생성됨 - 매일 클러스터/PVC가 재생성돼도 항상 이 PV -> 이 Access Point -> 같은
+# 디렉터리로 바인딩되어 데이터(및 openemr의 docker-version 마커)가 유지됨.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: openemr-data-pv
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: efs-sc
+  claimRef:
+    namespace: his-emr
+    name: openemr-data
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: "fs-0ea9ed5b6c2b1b6d5::fsap-0ff1a57049a03217f"

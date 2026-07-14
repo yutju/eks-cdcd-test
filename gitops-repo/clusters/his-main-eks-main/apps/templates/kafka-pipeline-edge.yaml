@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: '{{ .Values.global.gitlabUrl }}/root/gitops-repo.git'
     path: clusters/his-main-eks-main/apps/my-kafka-pipeline
-    targetRevision: kafka
+    targetRevision: main
     # my-kafka-pipeline은 자체 Chart.yaml(strimzi-kafka-operator subchart 포함)을 가진
     # 독립 Helm 차트이므로, helm 옵션 없이 경로만 지정해도 ArgoCD가 자동으로 Helm 차트로 인식함
   destination:

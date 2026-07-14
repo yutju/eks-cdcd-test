@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: '{{ .Values.global.gitlabUrl }}/root/gitops-repo.git'
     path: clusters/his-main-eks-main/apps/monitoring
-    targetRevision: kafka
+    targetRevision: main
     directory:
       recurse: true
     # kafka-podmonitor.yaml, windows-ad-scrapeconfig.yaml은 순수 k8s 매니페스트(PodMonitor, ScrapeConfig)라

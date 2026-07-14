@@ -7,12 +7,15 @@
 #   - 이 Dockerfile은 공식 openemr 이미지를 그대로 가져와(ECR/ACR로) 재배포하기 위한 것.
 #     Kaniko가 이 단일 스테이지를 빌드해 --destination 들(ECR, ACR)로 push한다.
 #
-# [버전 주의] 배포(deployment.yaml)가 :latest 를 쓰므로 여기서도 latest 를 미러링한다.
-#   DR 재현성을 원하면 실제 운영 버전으로 고정(pin) 권장. 예: openemr/openemr:7.0.3
-#   단, 고정 시 config가 기대하는 PHP 버전(현재 마운트 경로가 /etc/php84/...)과
-#   이미지의 PHP 버전이 일치하는 태그를 선택해야 한다.
+# [버전 고정 · DR 재현성] OPENEMR_VERSION 빌드 인자로 미러링할 공식 태그를 고정할 수 있다.
+#   - 기본값 latest → 기존 동작 유지(빌드 시점의 업스트림 최신을 미러).
+#   - DR 재현성을 원하면 Jenkins 파라미터(OPENEMR_VERSION) 또는 --build-arg 로
+#     실제 운영 버전을 지정하라. 예: OPENEMR_VERSION=7.0.3
+#   ※ 고정 시 config가 기대하는 PHP 버전(마운트 경로 /etc/php84/...)과
+#     이미지의 PHP 버전이 일치하는 태그를 선택해야 한다.
 # ─────────────────────────────────────────────────────────────
-FROM openemr/openemr:latest
+ARG OPENEMR_VERSION=latest
+FROM openemr/openemr:${OPENEMR_VERSION}
 
 # Kaniko가 반드시 레이어를 만들어 push하도록 하는 메타데이터(무해).
 LABEL dr.mirror="openemr official image mirrored to AWS ECR + Azure ACR for DR"

@@ -12,6 +12,7 @@ metadata:
     # HTTPS 활성화 + HTTP→HTTPS 리다이렉트
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
+  # alb.ingress.kubernetes.io/wafv2-acl-arn: "arn:aws:wafv2:ap-northeast-2:278584440977:regional/webacl/his-main-waf-patient-portal/44cbba5a-1775-45d3-8bd5-693c095e52a8"
 
     # ExternalDNS(퍼블릭 존 담당 인스턴스)가 이 host를 보고
     # Route53 퍼블릭 호스티드존에 자동으로 A(Alias) 레코드를 생성/관리함
@@ -32,3 +33,4 @@ spec:
             name: app-service   # Rollout의 stableService와 일치해야 함
             port:
               name: use-annotation
+

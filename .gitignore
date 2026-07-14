@@ -4,16 +4,30 @@
 *.ppk
 his-bastion-key.pem
 
-# 2. 쿠버네티스 Secret 파일
+# 2. 쿠버네티스 Secret 파일 (평문 Secret만 무시)
 *secret.yaml
 *secret.yml
 *secrets.yaml
+*secrets.yml
+# ── 예외: ESO 매니페스트는 평문 비밀이 없으므로(참조만) 위치 무관 커밋 허용 ──
+#    ※ 예외는 반드시 위 무시 패턴 '아래'에 있어야 효력이 있음
+#    ※ 절대 평문 Secret 파일을 externalsecret/secretstore 이름으로 만들지 말 것
+!*externalsecret*.yaml
+!*externalsecret*.yml
+!*ExternalSecret*.yaml
+!*secretstore*.yaml
+!*SecretStore*.yaml
 
 # 3. 환경 변수 및 자격 증명 (AWS 등)
+#    ※ 예전의 맨 'config' / 'credentials'는 이름이 같은 디렉터리·파일을
+#       어디서든 무시해 매니페스트가 조용히 빠질 수 있어 경로를 한정함
 .env
-credentials
-config
+.env.*
 kubeconfig
+**/.aws/credentials
+**/.aws/config
+aws/credentials
+aws/config
 
 # 4. 대용량 압축 파일 및 설치 파일
 *.zip

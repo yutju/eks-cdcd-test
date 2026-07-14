@@ -1,0 +1,11 @@
+# 정적 프로비저닝으로 전환 (동적 provisioningMode: efs-ap는 PVC 재생성마다
+# 새 Access Point/빈 디렉터리를 만들어서 매일 데이터가 유실되는 문제가 있었음.
+# 실제 바인딩은 pv.yaml의 고정 Access Point(fsap-01bb3edfecfe9b2cc)를 통해 이뤄짐.
+# 이 StorageClass는 PV/PVC 간 storageClassName 문자열 매칭용으로만 존재.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+reclaimPolicy: Retain
+volumeBindingMode: Immediate

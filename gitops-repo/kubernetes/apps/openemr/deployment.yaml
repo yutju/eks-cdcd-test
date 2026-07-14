@@ -16,7 +16,7 @@ spec:
       initContainers:
         - name: init-sqlconf
           image: 278584440977.dkr.ecr.ap-northeast-2.amazonaws.com/busybox:latest
-          command: ['sh', '-c', 'cp /tmp/sqlconf/sqlconf.php /tmp/sqlconf-rw/sqlconf.php && chmod 666 /tmp/sqlconf-rw/sqlconf.php']
+          command: ['sh', '-c', 'cp /tmp/sqlconf/sqlconf.php /tmp/sqlconf-rw/sqlconf.php && chown apache:apache /tmp/sqlconf-rw/sqlconf.php && chmod 400 /tmp/sqlconf-rw/sqlconf.php']
           volumeMounts:
             - name: openemr-sqlconf
               mountPath: /tmp/sqlconf
@@ -45,6 +45,9 @@ spec:
           envFrom:
             - secretRef:
                 name: openemr-db-secret
+          env:
+            - name: MANUAL_SETUP
+              value: "yes"
           volumeMounts:
             - name: openemr-data
               mountPath: /var/www/localhost/htdocs/openemr/sites

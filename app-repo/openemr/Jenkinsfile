@@ -54,6 +54,13 @@ spec:
     options {
         disableConcurrentBuilds()
     }
+    // [DR 재현성] 미러링할 공식 OpenEMR 이미지 태그. 기본 latest(기존 동작).
+    //   웹훅 자동 빌드는 이 기본값을 쓰고, "Build with Parameters"에서 특정 버전으로
+    //   고정해 재현 가능한 DR 미러를 만들 수 있음 (예: 7.0.3).
+    parameters {
+        string(name: 'OPENEMR_VERSION', defaultValue: 'latest',
+            description: '미러링할 openemr/openemr 태그 (DR 재현성 위해 실제 운영 버전 고정 권장)')
+    }
     environment {
         GITLAB_API_TOKEN    = credentials('gitlab-token-id')
         GITLAB_URL          = "${env.GITLAB_URL ?: 'http://10.0.4.10:8080'}"
@@ -62,7 +69,8 @@ spec:
         GENERIC_TRIGGER_TOKEN    = "jenkins-openemr-secret"
         AWS_REGION          = "ap-northeast-2"
         ECR_REPO_NAME       = "openemr"
-        IMAGE_TAG           = "${BUILD_NUMBER}"
+        // [변경] app-service와 태그 규칙 통일: build-<번호> (예: build-2)
+        IMAGE_TAG           = "build-${BUILD_NUMBER}"
         // [DR] ACR 자격증명 SSM 파라미터 경로 (login_server/username/password)
         ACR_SSM_PREFIX      = "/his-main/acr"
         // [DR] Azure Service Principal도 SSM에서 직접 조회 (ACR과 동일 패턴).
@@ -178,6 +186,8 @@ spec:
         //   - ACR : SSM에 보관된 admin 자격증명으로 static basic auth
         //   ※ ACR은 폐쇄망이라, 이 에이전트(AWS VPC 내 EKS)에서만 도달 가능해야 함
         //   ※ openemr/Dockerfile 이 존재해야 빌드됨
+        //   [변경] ECR/ACR 둘 다 build-<번호> 태그 + :latest 를 함께 push.
+        //          OPENEMR_VERSION 파라미터를 --build-arg 로 전달해 미러 대상 버전 고정 가능.
         stage('3. Docker Image Build & Multi-Registry Push (ECR + Azure ACR)') {
             when { environment name: 'APP_CHANGED', value: 'true' }
             steps {
@@ -193,7 +203,7 @@ spec:
                         // set +x 로 비밀번호가 콘솔 로그에 찍히지 않게 함.
                         sh """
                             set +x
-                            ACR_USERNAME=\$(aws ssm get-parameter --name '${env.ACR_SSM_PREFIX}/username' --query 'Parameter.Value' --output text)
+                            ACR_USERNAME=\$(aws ssm get-parameter --name '${env.ACR_SSM_PREFIX}/username' --with-decryption --query 'Parameter.Value' --output text)
                             ACR_PASSWORD=\$(aws ssm get-parameter --name '${env.ACR_SSM_PREFIX}/password' --with-decryption --query 'Parameter.Value' --output text)
                             ACR_AUTH=\$(printf '%s:%s' "\$ACR_USERNAME" "\$ACR_PASSWORD" | base64 | tr -d '\\n')
                             printf '{"credHelpers":{"%s":"ecr-login"},"auths":{"%s":{"auth":"%s"}}}' \\
@@ -204,6 +214,7 @@ spec:
                     }
                     container('kaniko') {
                         def ecrImageUri = "${ecrRegistry}/${env.ECR_REPO_NAME}:${env.IMAGE_TAG}"
+                        def ecrLatest   = "${ecrRegistry}/${env.ECR_REPO_NAME}:latest"
                         def acrImageUri = "${acrLoginServer}/${env.ECR_REPO_NAME}:${env.IMAGE_TAG}"
                         def acrLatest   = "${acrLoginServer}/${env.ECR_REPO_NAME}:latest"
                         sh """
@@ -212,14 +223,16 @@ spec:
                             /kaniko/executor \\
                                 --context \$(pwd)/openemr \\
                                 --dockerfile \$(pwd)/openemr/Dockerfile \\
+                                --build-arg OPENEMR_VERSION=${params.OPENEMR_VERSION} \\
                                 --destination ${ecrImageUri} \\
+                                --destination ${ecrLatest} \\
                                 --destination ${acrImageUri} \\
                                 --destination ${acrLatest}
                         """
                         env.ECR_IMAGE_URI = ecrImageUri
                         env.ACR_IMAGE_URI = acrImageUri
                         env.ACR_IMAGE_LATEST = acrLatest   // [DR] 5단계 ACA가 바라보는 warm-standby 태그
-                        echo "푸시 완료 → ECR: ${ecrImageUri} / ACR: ${acrImageUri} (+ ${acrLatest})"
+                        echo "푸시 완료 → ECR: ${ecrImageUri} (+ :latest) / ACR: ${acrImageUri} (+ ${acrLatest})"
                     }
                 }
             }
@@ -271,7 +284,7 @@ spec:
                                 sed -i "s|image: .*|image: ${env.ECR_IMAGE_URI}|g" gitops-repo-tmp/kubernetes/apps/openemr/deployment.yaml
                                 cd gitops-repo-tmp
                                 git add kubernetes/apps/openemr/deployment.yaml
-                                git commit -m "openemr image: ECR 이미지 업데이트 (Build #${env.IMAGE_TAG})"
+                                git commit -m "openemr image: ECR 이미지 업데이트 (${env.IMAGE_TAG})"
                                 set +x
                                 git push origin main || (git pull --rebase origin main && git push origin main)
                                 set -x
